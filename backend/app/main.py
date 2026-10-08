@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, health, internal, ws
+from app.api import auth, health, internal, tickets, ws
 from app.core.config import Settings, get_settings
 from app.core.db import DB_ERRORS
 from app.core.logging import install_token_redaction
@@ -37,6 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.add_exception_handler(error, database_unavailable)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(tickets.router)
     app.include_router(ws.router)
     app.include_router(internal.router)
     return app

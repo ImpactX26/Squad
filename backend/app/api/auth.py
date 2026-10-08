@@ -61,6 +61,17 @@ async def get_current_staff(
     return staff
 
 
+def require_roles(*roles: str):
+    """Dependency for routes some roles may use: the signed-in staff member, 401 or 403."""
+
+    async def dependency(staff: StaffUser = Depends(get_current_staff)) -> StaffUser:
+        if staff.role not in roles:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail=f"Only {' and '.join(roles)} accounts can do this.")
+        return staff
+
+    return dependency
+
+
 @router.post(
     "/api/auth/login",
     response_model=TokenOut,

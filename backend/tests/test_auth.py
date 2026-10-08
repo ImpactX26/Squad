@@ -5,14 +5,11 @@ shared dev database is left as it was.
 """
 
 import uuid
-from urllib.parse import urlsplit
 
-import httpx
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings, get_settings
-from app.core.db import DB_ERRORS, get_session, make_engine
+from app.core.config import Settings
+from app.core.db import get_session
 from app.core.security import (
     AuthNotConfigured,
     create_access_token,
@@ -22,13 +19,7 @@ from app.core.security import (
 )
 from app.main import create_app
 from app.models import StaffUser
-
-SECRET = "a" * 64
-PASSWORD = "right-password"
-
-
-def settings(**overrides) -> Settings:
-    return Settings(_env_file=None, jwt_secret=SECRET, **overrides)
+from tests.api_support import PASSWORD, add_staff, app, client, session, settings  # noqa: F401 (fixtures)
 
 
 # ---------- passwords and tokens ----------
@@ -89,52 +80,9 @@ async def test_me_without_a_token_is_401():
 # ---------- against the database ----------
 
 
-def client(app) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-
-
-@pytest.fixture
-async def session():
-    url = get_settings().database_url
-    engine = make_engine(url)
-    try:
-        conn = await engine.connect()
-    except (*DB_ERRORS, TimeoutError) as exc:
-        await engine.dispose()
-        pytest.skip(f"database unreachable at {urlsplit(url).hostname} ({type(exc).__name__})")
-    transaction = await conn.begin()
-    db = AsyncSession(bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False)
-    try:
-        yield db
-    finally:
-        await db.close()
-        await transaction.rollback()
-        await conn.close()
-        await engine.dispose()
-
-
 @pytest.fixture
 async def agent(session) -> StaffUser:
-    staff = StaffUser(
-        name="Test Agent",
-        email=f"test-agent-{uuid.uuid4().hex[:8]}@example.com",
-        password_hash=hash_password(PASSWORD),
-        role="agent",
-    )
-    session.add(staff)
-    await session.flush()
-    return staff
-
-
-@pytest.fixture
-def app(session):
-    app = create_app(settings())
-
-    async def same_session():
-        yield session
-
-    app.dependency_overrides[get_session] = same_session
-    return app
+    return await add_staff(session)
 
 
 async def test_login_returns_a_token_that_opens_me(app, agent):

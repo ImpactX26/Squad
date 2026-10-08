@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tickets
+         * @description The inbox, highest priority first, then the most recently updated.
+         */
+        get: operations["list_tickets_api_tickets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/events": {
         parameters: {
             query?: never;
@@ -119,6 +139,27 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** RowCustomer */
+        RowCustomer: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string | null;
+        };
+        /** RowDevice */
+        RowDevice: {
+            /** Model Name */
+            model_name: string;
+            /** Serial Number */
+            serial_number: string;
+            /** Color */
+            color: string | null;
+            /** Category */
+            category: string;
+        };
         /**
          * StaffEvent
          * @description One event, as /ws/staff sends it: {type, data, ts}.
@@ -166,6 +207,76 @@ export interface components {
             is_available: boolean;
             /** Avatar Url */
             avatar_url: string | null;
+        };
+        /** TicketList */
+        TicketList: {
+            /** Tickets */
+            tickets: components["schemas"]["TicketRow"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * TicketRow
+         * @description One inbox row (§11.3).
+         */
+        TicketRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed";
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "medium" | "high" | "urgent";
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "hardware" | "software" | "unknown";
+            /** Issue Type */
+            issue_type: string;
+            /**
+             * Source Channel
+             * @enum {string}
+             */
+            source_channel: "discord" | "telegram" | "email" | "web";
+            /** Channels */
+            channels: ("discord" | "telegram" | "email" | "web")[];
+            customer: components["schemas"]["RowCustomer"];
+            device: components["schemas"]["RowDevice"] | null;
+            /** Ai Summary */
+            ai_summary: string | null;
+            /** Duplicate Count */
+            duplicate_count: number;
+            /** Flags */
+            flags: string[];
+            /** Assigned Agent Id */
+            assigned_agent_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** TokenOut */
         TokenOut: {
@@ -306,6 +417,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_tickets_api_tickets_get: {
+        parameters: {
+            query?: {
+                /** @description A status, or open: not resolved or closed */
+                status?: ("new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed") | "open" | null;
+                priority?: ("low" | "medium" | "high" | "urgent") | null;
+                /** @description Tickets whose conversation crossed this channel */
+                channel?: ("discord" | "telegram" | "email" | "web") | null;
+                category?: ("hardware" | "software" | "unknown") | null;
+                assignee?: string | ("me" | "unassigned") | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketList"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
