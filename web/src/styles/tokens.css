@@ -21,6 +21,11 @@
   --color-success: #34C759;
   --color-warning: #FF9500;
   --color-danger: #FF3B30;
+  /* Channel badges (icon + tint), from the same system-color family; never status. */
+  --color-channel-telegram: #32ADE6;
+  --color-channel-discord: #5856D6;
+  --color-channel-email: #AF52DE;
+  --color-channel-web: #30B0C7;
 
   /* Shadows: only floating layers (popovers, sheets, menus) use one. */
   --shadow-*: initial;
@@ -67,6 +72,10 @@
     --color-success: #30D158;
     --color-warning: #FF9F0A;
     --color-danger: #FF453A;
+    --color-channel-telegram: #64D2FF;
+    --color-channel-discord: #5E5CE6;
+    --color-channel-email: #BF5AF2;
+    --color-channel-web: #40C8E0;
     --shadow-raised: 0 10px 30px rgb(0 0 0 / 0.6);
   }
 }

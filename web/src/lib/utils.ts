@@ -7,6 +7,10 @@ import { extendTailwindMerge } from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
+      color: [
+        "canvas", "surface", "surface-raised", "ink", "ink-secondary", "hairline", "accent", "on-accent",
+        "success", "warning", "danger", "channel-telegram", "channel-discord", "channel-email", "channel-web",
+      ],
       text: ["large-title", "title-1", "title-2", "body", "subheadline", "footnote"],
       radius: ["panel", "card", "control"],
       shadow: ["raised"],

@@ -1097,6 +1097,7 @@ Every staff page uses one pattern for loading, empty and error states (`componen
 | `hairline` | `#D2D2D7` | `#38383A` | Dividers |
 | `accent` | `#0071E3` | `#2997FF` | Links, primary buttons, focus ring |
 | `success` / `warning` / `danger` | `#34C759` / `#FF9500` / `#FF3B30` | `#30D158` / `#FF9F0A` / `#FF453A` | Status + priority |
+| `channel-telegram` / `channel-discord` / `channel-email` / `channel-web` | `#32ADE6` / `#5856D6` / `#AF52DE` / `#30B0C7` | `#64D2FF` / `#5E5CE6` / `#BF5AF2` / `#40C8E0` | Channel badges only (icon + tint), never status |
 
 **Type**
 
