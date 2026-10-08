@@ -1,11 +1,12 @@
-"""Async SQLAlchemy engine (ARCHITECTURE.md §8)."""
+"""Async SQLAlchemy engine and sessions (ARCHITECTURE.md §8)."""
 
+from collections.abc import AsyncIterator
 from functools import lru_cache
 
 import asyncpg
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
 
@@ -25,3 +26,14 @@ def make_engine(database_url: str) -> AsyncEngine:
 @lru_cache
 def get_engine() -> AsyncEngine:
     return make_engine(get_settings().database_url)
+
+
+@lru_cache
+def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(get_engine(), expire_on_commit=False)
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency: one session per request."""
+    async with get_sessionmaker()() as session:
+        yield session
