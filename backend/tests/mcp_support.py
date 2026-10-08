@@ -32,6 +32,8 @@ def error_json(result) -> dict:
 async def pool():
     try:
         p = await db.get_pool()
+        async with db.connection():  # the pool connects on first use
+            pass
     except ToolError as exc:  # database_unavailable
         await db.close_pool()
         host = urlsplit(db.dsn(get_settings().database_url)).hostname

@@ -22,6 +22,12 @@ UNREACHABLE = (OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
 # (A transaction's rollback on a dropped connection raises InterfaceError: the connection is closed.)
 LOST = (OSError, asyncpg.PostgresConnectionError)
 
+# The dev project's Session pooler takes 15 clients in all, shared by every laptop's API and MCP
+# servers. Each server opens none until a tool needs one, keeps at most 2, and closes one left idle
+# for 30 s, so a quiet server gives its slots back.
+MAX_SIZE = 2
+IDLE_SECONDS = 30.0
+
 _pool: asyncpg.Pool | None = None
 _lock = asyncio.Lock()
 
@@ -37,7 +43,7 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 
 
 async def get_pool() -> asyncpg.Pool:
-    """The shared pool, opened on first use. An unreachable database is a `database_unavailable` tool error."""
+    """The shared pool, made on first use; it connects when a tool takes a connection (connection())."""
     global _pool
     async with _lock:
         if _pool is None:
@@ -45,7 +51,9 @@ async def get_pool() -> asyncpg.Pool:
             # The Supabase Transaction pooler (port 6543) does not support prepared statements (§8).
             kwargs = {"statement_cache_size": 0} if urlsplit(url).port == 6543 else {}
             try:
-                _pool = await asyncpg.create_pool(url, min_size=1, max_size=5, init=_init_connection, **kwargs)
+                _pool = await asyncpg.create_pool(url, min_size=0, max_size=MAX_SIZE,
+                                                  max_inactive_connection_lifetime=IDLE_SECONDS,
+                                                  init=_init_connection, **kwargs)
             except UNREACHABLE as exc:
                 raise _unavailable(exc) from exc
     return _pool
