@@ -1,0 +1,4 @@
+saveExact: true
+
+allowBuilds:
+  unrs-resolver: false

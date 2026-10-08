@@ -1,0 +1,72 @@
+/*
+ * Design tokens from ARCHITECTURE.md §11.3. This is the only file with raw
+ * color values. Components use the utilities these generate
+ * (bg-surface, text-ink-secondary, text-title-1, rounded-card, shadow-raised)
+ * or var(--color-*) in CSS. Tailwind's default palette, type scale, radii and
+ * shadows are switched off, so anything else simply doesn't exist.
+ */
+
+@theme static {
+  /* Colors, light. Dark values are below under .dark. */
+  --color-*: initial;
+  --color-canvas: #F5F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #FFFFFF;
+  --color-ink: #1D1D1F;
+  --color-ink-secondary: #6E6E73;
+  --color-hairline: #D2D2D7;
+  --color-accent: #0071E3;
+  /* Text and icons on an accent fill (not in the §11.3 table: white in both themes). */
+  --color-on-accent: #FFFFFF;
+  --color-success: #34C759;
+  --color-warning: #FF9500;
+  --color-danger: #FF3B30;
+
+  /* Shadows: only floating layers (popovers, sheets, menus) use one. */
+  --shadow-*: initial;
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.12);
+
+  /* Type: one family, the system UI stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", Roboto, sans-serif;
+
+  /* Type scale 34 / 28 / 22 / 17 (body) / 15 / 13, tight letter-spacing on 28+. */
+  --text-*: initial;
+  --text-large-title: 2.125rem;
+  --text-large-title--line-height: 1.2;
+  --text-large-title--letter-spacing: -0.015em;
+  --text-title-1: 1.75rem;
+  --text-title-1--line-height: 1.21;
+  --text-title-1--letter-spacing: -0.012em;
+  --text-title-2: 1.375rem;
+  --text-title-2--line-height: 1.27;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.47;
+  --text-subheadline: 0.9375rem;
+  --text-subheadline--line-height: 1.4;
+  --text-footnote: 0.8125rem;
+  --text-footnote--line-height: 1.38;
+
+  /* Radii: 20 page panels, 14 list groups and cards, 10 inputs and buttons.
+     Status pills use rounded-full. */
+  --radius-*: initial;
+  --radius-panel: 20px;
+  --radius-card: 14px;
+  --radius-control: 10px;
+}
+
+@layer base {
+  .dark {
+    --color-canvas: #000000;
+    --color-surface: #1C1C1E;
+    --color-surface-raised: #2C2C2E;
+    --color-ink: #F5F5F7;
+    --color-ink-secondary: #98989D;
+    --color-hairline: #38383A;
+    --color-accent: #2997FF;
+    --color-on-accent: #FFFFFF;
+    --color-success: #30D158;
+    --color-warning: #FF9F0A;
+    --color-danger: #FF453A;
+    --shadow-raised: 0 10px 30px rgb(0 0 0 / 0.6);
+  }
+}

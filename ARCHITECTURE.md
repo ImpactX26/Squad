@@ -1703,5 +1703,5 @@ Pin exact versions (no `^` or `~`). Python 3.12 via `uv`; Node 24; `pnpm` 12.8.1
 | `jinja2` | 3.1.6 | `eslint` | 9.39.5 |
 | `pyjwt` | 2.15.1 | `@types/node` | 20.19.43 |
 | `bcrypt` | 5.0.0 | `@types/react` / `@types/react-dom` | 19.3.0 |
-| `reportlab` (PDF receipt, stretch) | 5.0.1 | | |
-| dev: `pytest` 9.1.1, `pytest-asyncio` 1.4.0, `pypdf` 6.19.0 | | | |
+| `reportlab` (PDF receipt, stretch) | 5.0.1 | `clsx` (shadcn's `cn()`) | 2.1.1 |
+| dev: `pytest` 9.1.1, `pytest-asyncio` 1.4.0, `pypdf` 6.19.0 | | `tailwind-merge` (shadcn's `cn()`) | 3.7.0 |
