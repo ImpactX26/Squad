@@ -11,6 +11,7 @@ Discord account starts as a placeholder customer (no email); linking it by seria
 """
 
 import json
+import secrets
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -182,6 +183,39 @@ async def resolve(inbound: InboundMessage, session: AsyncSession | None = None) 
             "body": inbound.text,
         })
     return resolved
+
+
+@dataclass(frozen=True)
+class WebSession:
+    session_id: str
+    customer_id: uuid.UUID
+    conversation_id: uuid.UUID
+
+
+async def open_web_session(name: str, email: str, session: AsyncSession | None = None) -> WebSession:
+    """The website chat's pre-chat form (§11.4): a new web session for the customer with this email.
+
+    The session id is the web channel's account and thread key (§6.1), and the chat's only
+    credential, so it is long and random. A known email links to that customer, whose stored name
+    is kept and never returned: typing someone's address reveals nothing about them, and each
+    session is its own conversation, so it shows none of their earlier chats.
+    """
+    address = normalize_email(email)
+    if address is None:
+        raise ValueError("a valid email address is required")
+    session_id = secrets.token_urlsafe(24)
+
+    async def open_in(db: AsyncSession) -> WebSession:
+        await limit_idle_transaction(db)
+        customer_id, _ = await _customer_for(db, "web", session_id, name.strip() or None, address)
+        conversation = await _conversation(db, customer_id, "web", session_id)
+        await db.commit()
+        return WebSession(session_id, customer_id, conversation.id)
+
+    if session is None:
+        async with get_sessionmaker()() as own:
+            return await open_in(own)
+    return await open_in(session)
 
 
 async def set_context(conversation_id: uuid.UUID, context: dict[str, Any], session: AsyncSession | None = None) -> None:

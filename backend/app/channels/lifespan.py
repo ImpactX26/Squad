@@ -17,6 +17,7 @@ from telegram.error import InvalidToken
 from app.channels.base import CHANNELS, ChannelAdapter, adapters
 from app.channels.dispatcher import SEND_TIMEOUT_SECONDS, SimulatedSink, get_dispatcher
 from app.channels.inbound import run_intake
+from app.channels.web_chat import mask_chat_sessions, web_adapter
 from app.core.config import Settings
 
 log = logging.getLogger(__name__)
@@ -68,12 +69,15 @@ async def connect(adapter: ChannelAdapter, stop: asyncio.Event, retry_seconds: f
 @asynccontextmanager
 async def channels_lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
+    mask_chat_sessions()
     dispatcher = get_dispatcher()
     if settings.app_env == "development":
         # POST /api/dev/simulate on a channel switched off here gets its reply from the sink (§10).
         dispatcher.sink = SimulatedSink(CHANNELS - enabled_channels(settings))
     stop = asyncio.Event()
     loop = asyncio.create_task(dispatcher.run(stop), name="outbox-dispatcher")
+    if adapters.get("web") is None:
+        adapters.add(web_adapter)  # part of the API: nothing to connect to
     to_connect = build_adapters(settings)
     connecting = [asyncio.create_task(connect(a, stop), name=f"connect-{a.channel}") for a in to_connect]
     log.info("outbox dispatcher started")
@@ -82,6 +86,10 @@ async def channels_lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         stop.set()
         await asyncio.gather(*connecting, return_exceptions=True)
+        try:  # a web message being handled finishes: its reply is queued before the dispatcher stops
+            await asyncio.wait_for(web_adapter.drain(), SHUTDOWN_GRACE_SECONDS)
+        except TimeoutError:
+            log.warning("web chat messages still in intake after %s s; stopping anyway", SHUTDOWN_GRACE_SECONDS)
         for adapter in to_connect:
             if adapters.get(adapter.channel) is adapter:
                 adapters.remove(adapter.channel)
@@ -89,6 +97,8 @@ async def channels_lifespan(app: FastAPI) -> AsyncIterator[None]:
                     await asyncio.wait_for(adapter.stop(), SHUTDOWN_GRACE_SECONDS)
                 except Exception as exc:
                     log.warning("%s adapter did not stop cleanly: %s", adapter.channel, type(exc).__name__)
+        if adapters.get("web") is web_adapter:
+            adapters.remove("web")
         # Let a tick in progress finish its transaction; cancel only one that hangs.
         try:
             await asyncio.wait_for(loop, SHUTDOWN_GRACE_SECONDS)
