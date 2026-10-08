@@ -14,7 +14,7 @@ from mcp.server import MCPServer
 
 from mcp_servers import serve
 from mcp_servers.common import events
-from mcp_servers.common.db import get_pool
+from mcp_servers.common.db import connection
 from mcp_servers.common.results import dumps, fail, parse_uuid
 
 PORT = 8101
@@ -82,8 +82,7 @@ async def create_ticket(
     conversation = parse_uuid(conversation_id, "conversation_id") if conversation_id else None
 
     messages_attached = 0
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         try:
             # Not built yet: embeddings. The embedding column stays NULL until Block 2 (§14.3).
             row = await conn.fetchrow(
@@ -142,8 +141,7 @@ async def get_ticket(ticket_id: str | None = None, ticket_number: str | None = N
     where, key = ("t.id = $1", parse_uuid(ticket_id, "ticket_id")) if ticket_id else (
         "t.ticket_number = $1", ticket_number.strip().upper())
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         t = await conn.fetchrow(
             f"""
             SELECT t.id, t.ticket_number, t.title, t.description, t.ai_summary, t.status, t.priority,
@@ -217,8 +215,7 @@ async def add_message(
         raise fail("missing_text", "body must not be empty")
     conversation = parse_uuid(conversation_id, "conversation_id") if conversation_id else None
 
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         ticket = await _ticket_row(conn, ticket_id)
         channel = "internal"
         if conversation is not None:
@@ -246,8 +243,7 @@ async def update_status(ticket_id: str, status: str, note: str | None = None) ->
     """Change a ticket's status, with an optional note on the timeline."""
     _check(status, STATUSES, "status")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         ticket = await _ticket_row(conn, ticket_id, lock=True)
         previous = ticket["status"]
         if previous == status:
@@ -279,8 +275,7 @@ async def update_summary(ticket_id: str, summary: str) -> str:
     if not summary.strip():
         raise fail("missing_text", "summary must not be empty")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         ticket = await _ticket_row(conn, ticket_id)
         await conn.execute(
             "UPDATE tickets SET ai_summary = $2, updated_at = now() WHERE id = $1", ticket["id"], summary.strip()
@@ -296,8 +291,7 @@ async def set_diagnostic_plan(ticket_id: str, steps: list[str], suggested_by: st
     """Add a ticket's diagnostic plan, in order. Steps already on the ticket are skipped."""
     _check(suggested_by, SUGGESTED_BY, "suggested_by")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         # The row lock keeps two concurrent plans from taking the same positions.
         ticket = await _ticket_row(conn, ticket_id, lock=True)
         existing = await conn.fetch(

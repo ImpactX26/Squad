@@ -16,7 +16,7 @@ from mcp.server import MCPServer
 
 from mcp_servers import serve
 from mcp_servers.common import events
-from mcp_servers.common.db import get_pool
+from mcp_servers.common.db import connection
 from mcp_servers.common.results import dumps, fail, parse_uuid
 
 PORT = 8104
@@ -39,8 +39,7 @@ async def send_reply(conversation_id: str, text: str) -> str:
     if not body:
         raise fail("missing_text", "text must not be empty")
 
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         conv = await conn.fetchrow("SELECT id, channel, ticket_id FROM conversations WHERE id = $1", conversation)
         if conv is None:
             raise fail("not_found", "no conversation with that id", field="conversation_id")
@@ -94,8 +93,7 @@ async def notify_staff(
         raise fail("bad_link", "link must be a dashboard path (/inventory) or an http(s) address", value=link)
     body = (body or "").strip() or None
 
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         if role is not None:
             users = [r["id"] for r in await conn.fetch("SELECT id FROM staff_users WHERE role = $1 ORDER BY name", role)]
         else:

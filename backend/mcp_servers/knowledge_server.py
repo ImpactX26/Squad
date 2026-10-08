@@ -9,7 +9,7 @@ Run: uv run python -m mcp_servers.knowledge_server
 from mcp.server import MCPServer
 
 from mcp_servers import serve
-from mcp_servers.common.db import get_pool
+from mcp_servers.common.db import connection
 from mcp_servers.common.results import dumps, fail, parse_uuid
 
 PORT = 8103
@@ -33,8 +33,7 @@ async def get_playbook(issue_type: str, category: str, model_id: str | None = No
                    field="category", value=category)
     model = parse_uuid(model_id, "model_id") if model_id else None
 
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         row = await conn.fetchrow(
             """
             SELECT id, issue_type, category, model_id, title, steps FROM kb_playbooks

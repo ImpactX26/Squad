@@ -9,7 +9,7 @@ import asyncpg
 from mcp.server import MCPServer
 
 from mcp_servers import serve
-from mcp_servers.common.db import get_pool
+from mcp_servers.common.db import connection
 from mcp_servers.common.results import dumps, fail, parse_uuid
 
 PORT = 8102
@@ -55,8 +55,7 @@ async def lookup_serial(serial_number: str) -> str:
     serial = serial_number.strip().upper()
     if not serial:
         raise fail("missing_text", "serial_number must not be empty")
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         r = await conn.fetchrow(DEVICE_SELECT + " WHERE upper(p.serial_number) = $1", serial)
     if r is None:
         return dumps({"found": False, "serial_number": serial})
@@ -69,8 +68,7 @@ async def lookup_serial(serial_number: str) -> str:
 async def lookup_model(model_number: str) -> str:
     """A model's specs and the parts compatible with it."""
     number = model_number.strip().upper()
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         m = await conn.fetchrow(
             """SELECT id, model_number, brand, name, category, specs, warranty_months
                FROM product_models WHERE upper(model_number) = $1""",
@@ -102,8 +100,7 @@ async def lookup_model(model_number: str) -> str:
 async def get_customer_products(customer_id: str) -> str:
     """The devices registered to a customer."""
     customer = parse_uuid(customer_id, "customer_id")
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         rows = await conn.fetch(DEVICE_SELECT + " WHERE p.customer_id = $1 ORDER BY p.created_at", customer)
     return dumps({"customer_id": customer, "products": [device(r) for r in rows]})
 
@@ -113,8 +110,7 @@ async def link_product_to_customer(product_id: str, customer_id: str) -> str:
     """Register a device with no owner to a customer on first contact. A device someone else owns is refused."""
     product = parse_uuid(product_id, "product_id")
     customer = parse_uuid(customer_id, "customer_id")
-    pool = await get_pool()
-    async with pool.acquire() as conn, conn.transaction():
+    async with connection() as conn, conn.transaction():
         if not await conn.fetchval("SELECT EXISTS (SELECT 1 FROM customers WHERE id = $1)", customer):
             raise fail("not_found", "no such customer", field="customer_id")
         owner = await conn.fetchrow("SELECT customer_id FROM products WHERE id = $1 FOR UPDATE", product)
@@ -134,8 +130,7 @@ async def get_service_price(service_code: str, model_id: str) -> str:
     """The price of a service on a model: the compatible part's price plus the labour fee."""
     code = service_code.strip().upper()
     model = parse_uuid(model_id, "model_id")
-    pool = await get_pool()
-    async with pool.acquire() as conn:
+    async with connection() as conn:
         service = await conn.fetchrow(
             "SELECT code, name, part_type, labour_fee, requires_visit FROM service_catalog WHERE code = $1", code
         )
