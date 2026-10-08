@@ -104,7 +104,7 @@ function PreChat({ onStart, ended }: { onStart: (s: ChatSession) => void; ended:
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-center px-5 py-8 sm:px-8">
+    <div className="flex flex-1 flex-col px-5 pt-6 pb-8 sm:mx-auto sm:w-full sm:max-w-md sm:justify-center sm:px-8">
       <BrandMark className="size-12" />
       <h2 className="mt-4 text-title-2 font-semibold">Chat with support</h2>
       <p className="mt-1 text-subheadline text-pretty text-ink-secondary">

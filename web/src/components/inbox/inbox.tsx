@@ -1,7 +1,7 @@
 "use client";
 
 import { Inbox as InboxIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useInboxTickets } from "@/components/inbox/data";
 import { TicketList } from "@/components/inbox/ticket-list";
@@ -73,9 +73,9 @@ export function Inbox() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {state.status === "loading" && <LoadingRows />}
-          {state.status === "error" && <ErrorState message={state.message} onRetry={reload} />}
+          {state.status === "error" && <ErrorState message={state.message} onRetry={reload} className="h-full" />}
           {state.status === "ready" && tickets.length === 0 && (
-            <EmptyState icon={view.channel ? CHANNELS[view.channel].Icon : InboxIcon} title="No tickets here">
+            <EmptyState icon={view.channel ? CHANNELS[view.channel].Icon : InboxIcon} title="No tickets here" className="h-full">
               {view.id === "open" ? "New tickets appear as customers write in." : "Nothing matches this view right now."}
             </EmptyState>
           )}
@@ -101,8 +101,8 @@ export function Inbox() {
           <TicketPreview ticket={selected} me={me} now={now} onBack={() => setMobilePreview(false)} />
         ) : (
           state.status === "ready" && (
-            <EmptyState title="No ticket selected" className="h-full">
-              Pick a ticket to see its summary and conversation.
+            <EmptyState title="Nothing to preview" className="h-full">
+              A ticket&apos;s summary and conversation show here once this view has one.
             </EmptyState>
           )
         )}
@@ -141,11 +141,18 @@ function ViewGroup({ views, current, onChoose }: { views: View[]; current: strin
 
 /** The views as a scrolling row of chips, below lg. */
 function ViewChips({ current, onChoose }: { current: string; onChoose: (id: string) => void }) {
+  const active = useRef<HTMLButtonElement>(null);
+  // The row scrolls sideways on a phone: keep the current view's chip in sight.
+  useEffect(() => {
+    active.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [current]);
+
   return (
     <ul aria-label="Views" className="-mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4 pb-1 lg:hidden">
       {ALL_VIEWS.map((v) => (
         <li key={v.id} className="shrink-0">
           <button
+            ref={v.id === current ? active : undefined}
             type="button"
             aria-current={v.id === current ? "true" : undefined}
             onClick={() => onChoose(v.id)}
