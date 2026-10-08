@@ -1,0 +1,24 @@
+# The Next.js app, 127.0.0.1:3000 (ARCHITECTURE.md §11, §17.2). Serves the last `pnpm build`.
+# Install: sudo cp deploy/servicemesh-*.service /etc/systemd/system/ && sudo systemctl daemon-reload
+
+[Unit]
+Description=ServiceMesh web (Next.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/Squad/web
+# uv from its installer (~/.local/bin), pnpm and node; systemd sets HOME from User=.
+Environment=PATH=/home/deploy/.local/bin:/home/deploy/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env pnpm start -p 3000 -H 127.0.0.1
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

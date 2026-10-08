@@ -1,0 +1,25 @@
+# The MCP servers, 127.0.0.1:8101-8104 (ARCHITECTURE.md §5, §17.2).
+# Install: sudo cp deploy/servicemesh-*.service /etc/systemd/system/ && sudo systemctl daemon-reload
+
+[Unit]
+Description=ServiceMesh MCP servers (run_all)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/Squad/backend
+# uv from its installer (~/.local/bin), pnpm and node; systemd sets HOME from User=.
+Environment=PATH=/home/deploy/.local/bin:/home/deploy/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env uv run python -m mcp_servers.run_all
+Restart=always
+RestartSec=3
+# run_all stops each server on SIGTERM and waits up to 10 s for it.
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
