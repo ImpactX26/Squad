@@ -1,0 +1,30 @@
+# ServiceMesh on one HTTPS hostname (ARCHITECTURE.md §17.2). Caddy gets and renews the
+# Let's Encrypt certificate itself; ports 80 and 443 must be open.
+#
+# The site address below is the server's hostname, and deploy/deploy.sh reads it from here.
+# servicemesh.invalid is a placeholder: replace it before the first deploy.
+#
+# Install or update on the server, from the repo root:
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# No access log on purpose: /ws/staff carries the staff JWT in its query string (§10).
+
+servicemesh.invalid {
+	# The MCP servers' event route stays on the server (§9).
+	handle /internal/* {
+		respond 404
+	}
+
+	# FastAPI: the REST API (SSE included) and the WebSockets, passed through as they are.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /ws/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	# Everything else is the Next.js app.
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
