@@ -116,6 +116,7 @@ async def rows(pool):
     async with pool.acquire() as conn, conn.transaction():
         tickets = [r["id"] for r in await conn.fetch(
             "SELECT id FROM tickets WHERE customer_id = ANY($1::uuid[])", customers)]
+        await conn.execute("DELETE FROM outbox WHERE conversation_id = $1", conversation)  # before its messages
         await conn.execute(
             "DELETE FROM messages WHERE ticket_id = ANY($1::uuid[]) OR conversation_id = $2", tickets, conversation
         )
