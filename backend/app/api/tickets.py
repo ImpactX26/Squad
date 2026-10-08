@@ -1,16 +1,28 @@
-"""GET /api/tickets: the inbox (ARCHITECTURE.md §10, §11.3). Agents and admins."""
+"""The ticket API (ARCHITECTURE.md §10): GET /api/tickets, the inbox (§11.3), and
+GET /api/tickets/{id}/timeline. Agents and admins."""
 
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status as http
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import require_roles
 from app.core.db import get_session
 from app.models import StaffUser
-from app.schemas.tickets import Channel, Priority, RowCustomer, RowDevice, TicketCategory, TicketList, TicketRow, TicketStatus
+from app.schemas.tickets import (
+    Channel,
+    Priority,
+    RowCustomer,
+    RowDevice,
+    TicketCategory,
+    TicketList,
+    TicketRow,
+    TicketStatus,
+    TicketTimeline,
+    TimelineMessage,
+)
 
 router = APIRouter()
 
@@ -95,3 +107,37 @@ def _row(r: Any) -> TicketRow:
         device=device, ai_summary=r["ai_summary"], duplicate_count=r["duplicate_count"], flags=list(r["flags"]),
         assigned_agent_id=r["assigned_agent_id"], created_at=r["created_at"], updated_at=r["updated_at"],
     )
+
+
+TIMELINE_LIMIT = 500
+
+
+@router.get("/api/tickets/{ticket_id}/timeline", response_model=TicketTimeline, responses={401: {}, 403: {}, 404: {}})
+async def ticket_timeline(
+    ticket_id: uuid.UUID,
+    staff: StaffUser = Depends(require_roles("agent", "admin")),
+    session: AsyncSession = Depends(get_session),
+) -> TicketTimeline:
+    """The ticket's conversation across every channel, oldest first (the last 500 messages).
+
+    The messages a customer sees: from the customer, the AI and agents. Not in it yet: internal
+    notes, system and technician messages, and the ticket's events (§10 merges them in).
+    """
+    number = await session.scalar(text("SELECT ticket_number FROM tickets WHERE id = :id"), {"id": ticket_id})
+    if number is None:
+        raise HTTPException(http.HTTP_404_NOT_FOUND, detail="No such ticket.")
+    rows = (await session.execute(text(
+        """
+        SELECT m.id, m.sender_type, m.channel, m.body, m.created_at,
+               CASE m.sender_type WHEN 'customer' THEN cu.full_name WHEN 'agent' THEN s.name END AS author
+        FROM messages m
+        LEFT JOIN conversations c ON c.id = m.conversation_id
+        LEFT JOIN customers cu ON cu.id = c.customer_id
+        LEFT JOIN staff_users s ON s.id = m.sender_staff_id
+        WHERE m.ticket_id = :id AND m.sender_type IN ('customer', 'ai', 'agent')
+          AND m.channel <> 'internal' AND NOT m.is_internal_note
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT :limit
+        """), {"id": ticket_id, "limit": TIMELINE_LIMIT})).mappings().all()
+    return TicketTimeline(ticket_id=ticket_id, ticket_number=number,
+                          messages=[TimelineMessage(**r) for r in reversed(rows)])

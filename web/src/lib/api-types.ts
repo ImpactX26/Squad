@@ -75,6 +75,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ticket Timeline
+         * @description The ticket's conversation across every channel, oldest first (the last 500 messages).
+         *
+         *     The messages a customer sees: from the customer, the AI and agents. Not in it yet: internal
+         *     notes, system and technician messages, and the ticket's events (§10 merges them in).
+         */
+        get: operations["ticket_timeline_api_tickets__ticket_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/events": {
         parameters: {
             query?: never;
@@ -489,6 +512,49 @@ export interface components {
              */
             updated_at: string;
         };
+        /** TicketTimeline */
+        TicketTimeline: {
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Messages */
+            messages: components["schemas"]["TimelineMessage"][];
+        };
+        /**
+         * TimelineMessage
+         * @description One message of a ticket's conversation, in the shape of ConversationMessage in
+         *     web/src/components/inbox/data.ts.
+         */
+        TimelineMessage: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Sender Type
+             * @enum {string}
+             */
+            sender_type: "customer" | "ai" | "agent";
+            /** Author */
+            author: string | null;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "discord" | "telegram" | "email" | "web";
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** TokenOut */
         TokenOut: {
             /** Access Token */
@@ -668,6 +734,58 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticket_timeline_api_tickets__ticket_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketTimeline"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

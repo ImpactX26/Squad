@@ -116,3 +116,59 @@ async def test_who_may_see_the_inbox(app, session):
         allowed = await c.get("/api/tickets", params={"limit": 1}, headers=bearer(admin))
         bad = await c.get("/api/tickets", params={"status": "opened"}, headers=bearer(admin))
     assert (anonymous.status_code, refused.status_code, allowed.status_code, bad.status_code) == (401, 403, 200, 422)
+
+
+# ---------- GET /api/tickets/{id}/timeline ----------
+
+
+async def test_the_timeline_is_the_conversation_across_channels(app, session, inbox):
+    agent = await add_staff(session, name="Arjun Agent")
+    ticket = uuid.UUID(inbox["medium_new"])
+    customer = await session.scalar(text("SELECT customer_id FROM tickets WHERE id = :t"), {"t": ticket})
+    telegram = await session.scalar(text(
+        "INSERT INTO conversations (customer_id, channel, external_thread_id, ticket_id) "
+        "VALUES (:c, 'telegram', :thread, :t) RETURNING id"), {"c": customer, "thread": f"tl-{inbox['tag']}", "t": ticket})
+    start = datetime.now(UTC) - timedelta(minutes=10)
+
+    async def message(minute, sender, channel, body, conversation=None, staff=None, internal=False):
+        await session.execute(text(
+            """INSERT INTO messages (conversation_id, ticket_id, sender_type, sender_staff_id, channel, body,
+                                     is_internal_note, created_at)
+               VALUES (:conv, :t, :sender, :staff, :channel, :body, :internal, :at)"""),
+            {"conv": conversation, "t": ticket, "sender": sender, "staff": staff, "channel": channel, "body": body,
+             "internal": internal, "at": start + timedelta(minutes=minute)})
+
+    await message(0, "customer", "telegram", "Battery stuck at 0%", telegram)
+    await message(1, "ai", "telegram", "Your ticket is open", telegram)
+    await message(2, "agent", "telegram", "Confirmed, replacing it", telegram, staff=agent.id)
+    await message(3, "agent", "internal", "Check stock first", staff=agent.id, internal=True)
+    await message(4, "system", "internal", "Customer says it is fixed")
+    async with client(app) as c:
+        response = await c.get(f"/api/tickets/{ticket}/timeline", headers=bearer(agent))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ticket_id"] == str(ticket) and body["ticket_number"].startswith("SR-")
+    assert [(m["sender_type"], m["author"], m["channel"], m["body"]) for m in body["messages"]] == [
+        ("customer", "Inbox Test", "telegram", "Battery stuck at 0%"),
+        ("ai", None, "telegram", "Your ticket is open"),
+        ("agent", "Arjun Agent", "telegram", "Confirmed, replacing it"),
+    ]
+    assert set(body["messages"][0]) == {"id", "sender_type", "author", "channel", "body", "created_at"}
+
+
+async def test_the_timeline_of_a_ticket_with_no_messages_is_empty(app, session, inbox):
+    agent = await add_staff(session)
+    async with client(app) as c:
+        response = await c.get(f"/api/tickets/{inbox['medium_old']}/timeline", headers=bearer(agent))
+    assert response.status_code == 200 and response.json()["messages"] == []
+
+
+async def test_who_may_read_a_timeline(app, session, inbox):
+    agent, admin, technician = [await add_staff(session, role=r) for r in ("agent", "admin", "technician")]
+    async with client(app) as c:
+        url = f"/api/tickets/{inbox['urgent_old']}/timeline"
+        statuses = [(await c.get(url, headers=bearer(s))).status_code for s in (agent, admin, technician)]
+        signed_out = (await c.get(url)).status_code
+        missing = (await c.get(f"/api/tickets/{uuid.uuid4()}/timeline", headers=bearer(agent))).status_code
+        not_an_id = (await c.get("/api/tickets/SR-2026-00001/timeline", headers=bearer(agent))).status_code
+    assert statuses == [200, 200, 403] and signed_out == 401 and missing == 404 and not_an_id == 422

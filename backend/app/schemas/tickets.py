@@ -50,3 +50,22 @@ class TicketList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class TimelineMessage(BaseModel):
+    """One message of a ticket's conversation, in the shape of ConversationMessage in
+    web/src/components/inbox/data.ts.
+    """
+
+    id: uuid.UUID
+    sender_type: Literal["customer", "ai", "agent"]
+    author: str | None  # the customer's or the agent's name; null for the AI
+    channel: Channel
+    body: str
+    created_at: datetime
+
+
+class TicketTimeline(BaseModel):
+    ticket_id: uuid.UUID
+    ticket_number: str
+    messages: list[TimelineMessage]  # oldest first, across every channel
