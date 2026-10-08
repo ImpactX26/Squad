@@ -39,19 +39,20 @@ export function ChannelStack({ channels, className }: { channels: Channel[]; cla
   );
 }
 
-/** Icon and name, as a pill. */
-export function ChannelBadge({ channel, className }: { channel: Channel; className?: string }) {
+/** Icon and name, as a pill; sm sits in a line of footnote text. */
+export function ChannelBadge({ channel, size = "md", className }: { channel: Channel; size?: "sm" | "md"; className?: string }) {
   const { label, Icon, text, soft } = CHANNELS[channel];
   return (
     <span
       className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full pr-3 pl-2 text-footnote font-semibold",
+        "inline-flex items-center rounded-full text-footnote font-semibold",
+        size === "sm" ? "h-6 gap-1 pr-2.5 pl-1.5" : "h-7 gap-1.5 pr-3 pl-2",
         soft,
         text,
         className,
       )}
     >
-      <Icon aria-hidden="true" className="size-3.5" />
+      <Icon aria-hidden="true" className={size === "sm" ? "size-3" : "size-3.5"} />
       {label}
     </span>
   );

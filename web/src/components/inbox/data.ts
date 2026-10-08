@@ -20,19 +20,17 @@ export type TicketsState =
   | { status: "error"; message: string }
   | { status: "ready"; tickets: TicketRow[]; total: number };
 
-/** One message of a ticket's conversation, for when GET /api/tickets/{id}/timeline exists. */
-export type ConversationMessage = {
-  id: string;
-  sender_type: "customer" | "ai" | "agent";
-  author: string | null;
-  channel: TicketRow["source_channel"];
-  body: string;
-  created_at: string;
-};
+/** One message of a ticket's conversation, from GET /api/tickets/{id}/timeline. */
+export type ConversationMessage = Schemas["TimelineMessage"];
+type TicketTimeline = Schemas["TicketTimeline"];
 
 export type ConversationState =
-  | { status: "ready"; messages: ConversationMessage[] }
-  | { status: "not_built"; reason: string };
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; messages: ConversationMessage[] };
+
+// A reply queued, a message added, a follow-up merged: each names its ticket (§9).
+const CONVERSATION_EVENTS = ["ticket.updated", "ticket.followup"] as const;
 
 type Loaded = { key: string; state: Exclude<TicketsState, { status: "loading" }> };
 
@@ -73,11 +71,40 @@ export function useInboxTickets(query: InboxQuery): { state: TicketsState; reloa
   return { state, reload: () => setVersion((v) => v + 1), live };
 }
 
-/** The conversation needs GET /api/tickets/{id}/timeline, which is Block 2 (§14.3). */
-export function useConversation(ticket: TicketRow): ConversationState {
-  void ticket;
-  return {
-    status: "not_built",
-    reason: "It arrives with the ticket timeline in the next round. Until then, the AI summary above says what the customer reported.",
-  };
+type LoadedConversation = { id: string; state: Exclude<ConversationState, { status: "loading" }> };
+
+/**
+ * A ticket's conversation across every channel, oldest first (GET /api/tickets/{id}/timeline, §10),
+ * kept live: an event about this ticket or a reconnect of /ws/staff refetches it (debounced).
+ */
+export function useConversation(ticketId: string): { state: ConversationState; reload: () => void } {
+  const [loaded, setLoaded] = useState<LoadedConversation | null>(null);
+  const [version, setVersion] = useState(0);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<TicketTimeline>(`/api/tickets/${encodeURIComponent(ticketId)}/timeline`, { signal: controller.signal })
+      .then((timeline) => setLoaded({ id: ticketId, state: { status: "ready", messages: timeline.messages } }))
+      .catch((error: unknown) => {
+        if ((error as Error).name === "AbortError") return;
+        const message = error instanceof ApiError ? error.message : "The conversation couldn't be loaded.";
+        // A failed refresh keeps the messages already shown; only a first load shows the error.
+        setLoaded((previous) =>
+          previous?.id === ticketId && previous.state.status === "ready" ? previous : { id: ticketId, state: { status: "error", message } },
+        );
+      });
+    return () => controller.abort();
+  }, [ticketId, version]);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  useStaffEvents(CONVERSATION_EVENTS, (event) => {
+    if (event && event.data.ticket_id !== ticketId) return;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setVersion((v) => v + 1), REFETCH_DEBOUNCE_MS);
+  });
+
+  const state: ConversationState = loaded?.id === ticketId ? loaded.state : { status: "loading" };
+  return { state, reload: () => setVersion((v) => v + 1) };
 }

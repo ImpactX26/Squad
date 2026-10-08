@@ -4,8 +4,8 @@ import { AlertTriangle, ChevronLeft, MessagesSquare, Sparkles } from "lucide-rea
 import type { ReactNode } from "react";
 
 import { useConversation, type ConversationMessage } from "@/components/inbox/data";
-import { EmptyState } from "@/components/states";
-import { ChannelBadge, ChannelGlyph } from "@/components/ticket/channel";
+import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { ChannelBadge } from "@/components/ticket/channel";
 import { PriorityChip, StatusChip } from "@/components/ticket/chips";
 import type { Schemas } from "@/lib/api";
 import { fullTime, timeAgo } from "@/lib/format";
@@ -115,17 +115,21 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Conversation({ ticket, now }: { ticket: TicketRow; now: number }) {
-  const conversation = useConversation(ticket);
-  if (conversation.status === "not_built") {
+  const { state, reload } = useConversation(ticket.id);
+  if (state.status === "loading") return <LoadingState label="Loading the conversation" className="py-8" />;
+  if (state.status === "error") {
+    return <ErrorState title="The conversation couldn't be loaded" message={state.message} onRetry={reload} className="py-8" />;
+  }
+  if (state.messages.length === 0) {
     return (
-      <EmptyState icon={MessagesSquare} title="The conversation isn't available yet" className="py-8">
-        {conversation.reason}
+      <EmptyState icon={MessagesSquare} title="No messages yet" className="py-8">
+        Messages from the customer and every reply appear here, on whichever channel they were sent.
       </EmptyState>
     );
   }
   return (
-    <ol className="mt-4 space-y-4">
-      {conversation.messages.map((message) => (
+    <ol aria-label="Messages, oldest first" className="mt-4 space-y-4">
+      {state.messages.map((message) => (
         <Bubble key={message.id} message={message} now={now} />
       ))}
     </ol>
@@ -138,19 +142,24 @@ function Bubble({ message, now }: { message: ConversationMessage; now: number })
   const fromCustomer = message.sender_type === "customer";
   return (
     <li className={cn("flex flex-col", fromCustomer ? "items-start" : "items-end")}>
-      <p className={cn("mb-1 flex items-center gap-1.5 px-1 text-footnote text-ink-secondary", !fromCustomer && "flex-row-reverse")}>
-        <ChannelGlyph channel={message.channel} className="size-5" />
+      <p
+        className={cn(
+          "mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-footnote text-ink-secondary",
+          !fromCustomer && "flex-row-reverse",
+        )}
+      >
         <span className="font-semibold text-ink">
           {SENDER[message.sender_type]}
           {message.author && message.sender_type !== "ai" ? ` · ${message.author}` : ""}
         </span>
+        <ChannelBadge channel={message.channel} size="sm" />
         <time dateTime={message.created_at} title={fullTime(message.created_at)} className="tabular-nums">
           {timeAgo(message.created_at, now)}
         </time>
       </p>
       <p
         className={cn(
-          "max-w-[85%] rounded-panel px-4 py-2.5 text-subheadline text-pretty",
+          "max-w-[85%] rounded-panel px-4 py-2.5 text-subheadline whitespace-pre-line text-pretty break-words",
           message.sender_type === "customer" && "rounded-tl-control bg-canvas text-ink",
           message.sender_type === "ai" && "rounded-tr-control bg-accent/10 text-ink",
           message.sender_type === "agent" && "rounded-tr-control bg-accent text-on-accent",
