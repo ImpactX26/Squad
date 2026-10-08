@@ -65,6 +65,21 @@ export function clearSession(): void {
   window.dispatchEvent(new Event(CHANGED));
 }
 
+let signedOutOnPurpose = false;
+
+/** Sign out from the menu: the staff pages then go to /login with no ?next= to come back to. */
+export function signOut(): void {
+  signedOutOnPurpose = true;
+  clearSession();
+}
+
+/** True once after signOut(); false when the session ended by itself (expiry, 401, 1008). */
+export function takeSignOut(): boolean {
+  const was = signedOutOnPurpose;
+  signedOutOnPurpose = false;
+  return was;
+}
+
 function subscribe(onChange: () => void): () => void {
   // "storage" fires when another tab signs in or out.
   window.addEventListener(CHANGED, onChange);
