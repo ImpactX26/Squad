@@ -1,0 +1,17 @@
+# Secrets: only the .example files are ever tracked (§18.1)
+.env
+.env.*
+!*.example
+
+# Python
+.venv
+__pycache__
+backend/.cache
+
+# Node / Next.js
+node_modules
+.next
+
+# OS noise
+Thumbs.db
+.DS_Store
