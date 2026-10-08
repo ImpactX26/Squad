@@ -9,11 +9,14 @@ import styles from "./laptop-hero.module.css";
 const SERIAL = "AX14-7F3K92";
 const TICKET = "SR-2026-00042";
 
-const bubble = "max-w-[85%] rounded-card px-2.5 py-1.5 sm:px-3 sm:py-2";
+const bubble = "max-w-[85%] rounded-card px-3 py-1.5";
 const customerBubble = cn(bubble, "self-end bg-accent text-on-accent");
 const supportBubble = cn(bubble, "bg-canvas text-ink dark:bg-surface-raised");
 
-/** A support conversation inside a laptop. Decorative: one label describes it. */
+/**
+ * A support conversation inside a laptop from sm up; on a phone the conversation card stands on its
+ * own at its natural height. Decorative: one label describes it.
+ */
 export function LaptopHero({ className }: { className?: string }) {
   return (
     <div
@@ -21,12 +24,13 @@ export function LaptopHero({ className }: { className?: string }) {
       aria-label={`A support chat on a laptop: a customer says their Aurora 14 won't charge, gives the serial number when asked, and gets ticket ${TICKET}.`}
       className={cn("w-full select-none", className)}
     >
-      {/* Lid */}
-      <div className="mx-[5%] rounded-t-card bg-ink p-[2.5%] pt-[2%] dark:bg-surface-raised dark:ring-1 dark:ring-hairline">
-        <div className="mx-auto mb-[1.5%] size-1.5 rounded-full bg-ink-secondary/50" />
+      {/* Lid (sm up) */}
+      <div className="sm:mx-[5%] sm:rounded-t-card sm:bg-ink sm:p-[2.5%] sm:pt-[2%] sm:dark:bg-surface-raised sm:dark:ring-1 sm:dark:ring-hairline">
+        <div className="mx-auto mb-[1.5%] hidden size-1.5 rounded-full bg-ink-secondary/50 sm:block" />
 
-        {/* Screen: at least 16:10, taller when the chat needs it (no overflow clipping, or it can't grow). */}
-        <div className="flex aspect-[16/10] flex-col rounded-control bg-surface text-footnote sm:text-subheadline">
+        {/* Screen: exactly 16:10 in the frame, the chat anchored at the bottom as in a real one (were it
+            ever taller, its oldest message would leave at the top). On a phone, a card of natural height. */}
+        <div className="flex flex-col rounded-card bg-surface text-footnote sm:aspect-[16/10] sm:overflow-hidden sm:rounded-control">
           <div className="flex items-center gap-2 border-b border-hairline px-3 py-2">
             <BrandMark className="size-5" />
             <span className="font-semibold text-ink">{COMPANY_NAME} support</span>
@@ -36,14 +40,13 @@ export function LaptopHero({ className }: { className?: string }) {
             </span>
           </div>
 
-          <div className="flex flex-col gap-2 p-3">
+          <div className="flex min-h-0 flex-1 flex-col justify-end gap-2 p-3">
             <p className={cn(customerBubble, styles.m1)}>My Aurora 14 won&apos;t charge past 0%.</p>
 
             <div className="grid justify-items-start">
               <Typing className={styles.t1} />
               <p className={cn(supportBubble, "col-start-1 row-start-1", styles.m2)}>
                 Sorry about that. What&apos;s its serial number?
-                <span className="max-sm:hidden"> It&apos;s on the label underneath.</span>
               </p>
             </div>
 
@@ -53,8 +56,8 @@ export function LaptopHero({ className }: { className?: string }) {
               <Typing className={styles.t2} />
               <div className={cn(supportBubble, "col-start-1 row-start-1", styles.m4)}>
                 <p>
-                  Thanks, that&apos;s your Aurora 14 ({SERIAL}). An agent will confirm a battery
-                  replacement here.
+                  Thanks, that&apos;s your Aurora 14 (<span className="whitespace-nowrap">{SERIAL}</span>). An
+                  agent will confirm a battery replacement here.
                 </p>
                 <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-footnote font-medium tabular-nums">
                   <Check aria-hidden="true" className="size-3.5 text-success" strokeWidth={3} />
@@ -64,7 +67,7 @@ export function LaptopHero({ className }: { className?: string }) {
             </div>
           </div>
 
-          <div className="mx-3 mt-auto mb-3 hidden items-center rounded-full border border-hairline py-1 pr-1 pl-3 text-ink-secondary sm:flex">
+          <div className="mx-3 mb-3 flex items-center rounded-full border border-hairline py-1 pr-1 pl-3 text-ink-secondary">
             Message
             <span className="ml-auto inline-flex size-6 items-center justify-center rounded-full bg-accent text-on-accent">
               <ArrowUp aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
@@ -73,8 +76,8 @@ export function LaptopHero({ className }: { className?: string }) {
         </div>
       </div>
 
-      {/* Base */}
-      <div className="relative h-3 rounded-b-card bg-hairline sm:h-4">
+      {/* Base (sm up) */}
+      <div className="relative hidden h-4 rounded-b-card bg-hairline sm:block">
         <div className="absolute top-0 left-1/2 h-1.5 w-[16%] -translate-x-1/2 rounded-b-control bg-ink-secondary/30" />
       </div>
     </div>

@@ -15,7 +15,7 @@ export default function HomePage() {
         <ThemeToggle />
       </header>
 
-      <main className="mx-auto grid w-full max-w-6xl flex-1 content-center items-center gap-12 px-4 pt-6 pb-12 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-16 lg:py-12">
+      <main className="mx-auto grid w-full max-w-6xl flex-1 content-center items-center gap-12 px-4 pt-6 pb-12 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12 lg:py-12 xl:gap-16">
         <div className="mx-auto w-full max-w-xl lg:max-w-none">
           <h1 className="text-large-title font-semibold text-balance">
             Help for your laptop, PC or headphones
