@@ -14,17 +14,20 @@ is read back from its row (outcome_of), never from whose call happened to send i
 
 Rows without a conversation (send_email) belong to the email channel and are left alone here.
 
-On a laptop, a channel switched off in settings (ENABLE_*=false) has no adapter; with a
-SimulatedSink its replies are logged and kept in memory instead, so POST /api/dev/simulate can
-return them (§10). A channel that is switched on but not connected is never simulated: its
-replies wait and are retried, then fail.
+A process claims only the replies it can deliver: those on a channel with a connected adapter
+here. Laptops share the dev database, so a reply on a channel switched off here (ENABLE_*=false)
+is left to the process that runs that channel, and one on a channel switched on but not yet
+connected waits until it is. In development a SimulatedSink also takes the replies of
+POST /api/dev/simulate's own threads on a switched-off channel (channels.inbound marks them from
+raw_meta["simulated"]); they are logged and kept in memory so the route can return them (§10).
+No other reply ever goes to the sink.
 """
 
 import asyncio
 import logging
 import re
 import uuid
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Iterable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -63,8 +66,34 @@ def _error_text(exc: BaseException) -> str:
     return BOT_TOKEN.sub("bot<token>", f"{type(exc).__name__}: {detail}")[:300]
 
 
+class SimulatedThreads:
+    """The threads POST /api/dev/simulate has written to in this process, newest last."""
+
+    def __init__(self, keep: int = 500) -> None:
+        self._keys: OrderedDict[str, None] = OrderedDict()
+        self._keep = keep
+
+    def add(self, channel: str, thread_id: str) -> None:
+        key = f"{channel}:{thread_id}"  # a channel name has no colon
+        self._keys[key] = None
+        self._keys.move_to_end(key)
+        while len(self._keys) > self._keep:
+            self._keys.popitem(last=False)
+
+    def keys(self, channels: Iterable[str]) -> list[str]:
+        """The marked threads on these channels, as channel:thread_id."""
+        wanted = set(channels)
+        return [key for key in self._keys if key.split(":", 1)[0] in wanted]
+
+    def clear(self) -> None:
+        self._keys.clear()
+
+
+simulated_threads = SimulatedThreads()
+
+
 class SimulatedSink:
-    """Takes the replies of channels switched off in this process (development only)."""
+    """Takes the replies of /api/dev/simulate threads on channels switched off here (development only)."""
 
     def __init__(self, channels: Iterable[str], keep: int = 200) -> None:
         self.channels = frozenset(channels)
@@ -90,7 +119,16 @@ class Dispatcher:
         self.sink = sink
         self._tick = asyncio.Lock()
 
+    def _deliverable(self) -> tuple[list[str], list[str]]:
+        """The channels with a connected adapter here, and the simulated threads the sink takes."""
+        connected = self._adapters.connected()
+        simulated = simulated_threads.keys(self.sink.channels - set(connected)) if self.sink is not None else []
+        return connected, simulated
+
     async def _claim(self, conversation_id: uuid.UUID | None) -> list[Any]:
+        connected, simulated = self._deliverable()
+        if not connected and not simulated:
+            return []
         async with self._sessionmaker() as session:
             await limit_idle_transaction(session)
             rows = (await session.execute(
@@ -101,13 +139,15 @@ class Dispatcher:
                     FROM outbox o JOIN conversations c ON c.id = o.conversation_id
                     WHERE o.status = 'pending'
                       AND (CAST(:conversation AS uuid) IS NULL OR o.conversation_id = :conversation)
+                      AND (c.channel = ANY(:connected) OR c.channel || ':' || c.external_thread_id = ANY(:simulated))
                       AND o.created_at + make_interval(secs => (power(2, o.attempts) - 1) * :base) <= now()
                     ORDER BY o.created_at
                     LIMIT :batch
                     FOR UPDATE OF o SKIP LOCKED
                     """
                 ).columns(payload=JSONB),
-                {"conversation": conversation_id, "base": RETRY_BASE_SECONDS, "batch": BATCH},
+                {"conversation": conversation_id, "connected": connected, "simulated": simulated,
+                 "base": RETRY_BASE_SECONDS, "batch": BATCH},
             )).all()
             if rows:
                 await session.execute(text("UPDATE outbox SET attempts = attempts + 1 WHERE id = ANY(:ids)"),

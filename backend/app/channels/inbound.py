@@ -17,7 +17,7 @@ from contextlib import suppress
 
 from app.channels import identity
 from app.channels.base import ChannelAdapter, InboundMessage
-from app.channels.dispatcher import get_dispatcher
+from app.channels.dispatcher import get_dispatcher, simulated_threads
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +74,8 @@ async def send_fallback(adapter: ChannelAdapter, inbound: InboundMessage) -> str
 
 async def run_intake(adapter: ChannelAdapter, inbound: InboundMessage, intake: IntakeHandler | None = None) -> None:
     """Run intake for one inbound message with the typing indicator on; never raises."""
+    if inbound.raw_meta.get("simulated"):  # POST /api/dev/simulate: its replies may go to the sink
+        simulated_threads.add(inbound.channel, inbound.external_thread_id)
     typing = asyncio.create_task(_keep_typing(adapter, inbound.external_thread_id))
     try:
         await (intake or _intake())(inbound)

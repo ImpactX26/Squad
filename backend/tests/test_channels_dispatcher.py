@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.channels import lifespan
 from app.channels.base import Adapters
-from app.channels.dispatcher import MAX_ATTEMPTS, Dispatcher, SimulatedSink
+from app.channels.dispatcher import MAX_ATTEMPTS, Dispatcher, SimulatedSink, simulated_threads
 from app.core.config import Settings
 from app.core.events import bus
 from tests.api_support import session  # noqa: F401 (fixture)
@@ -37,6 +37,13 @@ class FakeAdapter:
             raise self.fail_with
         self.sent.append((thread_id, text, meta))
         return f"ext-{len(self.sent)}"
+
+
+@pytest.fixture(autouse=True)
+def no_simulated_threads():
+    simulated_threads.clear()
+    yield
+    simulated_threads.clear()
 
 
 def dispatcher_for(session, *adapters_, sink=None) -> Dispatcher:
@@ -112,22 +119,49 @@ async def test_a_failing_send_is_retried_after_a_back_off_then_marked_failed(ses
     assert (await dispatcher.outcome_of(row.outbox)).attempts == MAX_ATTEMPTS  # failed rows are left alone
 
 
-async def test_a_channel_with_no_adapter_waits_and_retries(session):
+async def test_a_channel_with_no_adapter_here_is_left_for_the_process_that_runs_it(session):
     row = await queue_reply(session, channel="discord")
-    dispatcher = dispatcher_for(session, FakeAdapter("telegram"))
+    dispatcher = dispatcher_for(session, FakeAdapter("telegram"), sink=SimulatedSink({"discord", "email"}))
     assert await dispatcher.deliver_pending(row.conversation) == 0
+    await dispatcher.deliver_pending()
     outcome = await dispatcher.outcome_of(row.outbox)
-    assert outcome.status == "pending" and "no discord adapter" in outcome.last_error
+    assert (outcome.status, outcome.attempts, outcome.last_error) == ("pending", 0, None)  # never claimed
 
 
-async def test_a_switched_off_channel_goes_to_the_simulated_sink(session):
+async def test_a_simulated_thread_on_a_switched_off_channel_goes_to_the_sink(session):
     row = await queue_reply(session, channel="discord")
+    simulated_threads.add("discord", row.thread)  # what run_intake does for /api/dev/simulate
     sink = SimulatedSink({"discord", "email"})
     dispatcher = dispatcher_for(session, FakeAdapter("telegram"), sink=sink)
     assert await dispatcher.deliver_pending(row.conversation) == 1
     [reply] = sink.replies(row.conversation)
     assert (reply["channel"], reply["thread_id"], reply["text"]) == ("discord", row.thread, "Your ticket is SR-2026-00001.")
     assert (await dispatcher.outcome_of(row.outbox)).status == "sent"
+
+
+async def test_two_dispatchers_on_one_database_each_claim_only_what_they_can_deliver(session):
+    """A laptop running the dev Telegram bot, and one with Telegram off and a sink (development)."""
+    real = await queue_reply(session, channel="telegram", text_="real")
+    simulated = await queue_reply(session, channel="telegram", text_="simulated")
+    simulated_threads.add("telegram", simulated.thread)
+    bot = FakeAdapter("telegram")
+    with_bot = dispatcher_for(session, bot)
+    sink = SimulatedSink({"telegram", "discord", "email"})
+    without_bot = dispatcher_for(session, sink=sink)
+
+    # Telegram off: neither its request path nor its loop takes the real reply; the sink gets
+    # only the simulated thread.
+    assert await without_bot.deliver_pending(real.conversation) == 0
+    assert await without_bot.deliver_pending() == 1
+    assert [r["text"] for r in sink.replies(simulated.conversation)] == ["simulated"]
+    assert sink.replies(real.conversation) == []
+    assert (await without_bot.outcome_of(real.outbox)).attempts == 0
+
+    # The bot's loop delivers the real reply (the shared dev database may hold other pending ones).
+    await with_bot.deliver_pending()
+    assert "real" in [body for _, body, _ in bot.sent] and "simulated" not in [body for _, body, _ in bot.sent]
+    outcome = await with_bot.outcome_of(real.outbox)
+    assert (outcome.status, outcome.attempts) == ("sent", 1)
 
 
 async def test_a_request_path_delivers_only_its_own_conversation(session):
