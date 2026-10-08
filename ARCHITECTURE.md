@@ -1281,7 +1281,7 @@ SEED_STAFF_PASSWORD=
 
 # ---------- Database ----------
 # Laptops: the Supabase dev project. Server: the Supabase prod project (§13.4).
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/servicemesh
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/servicemesh
 # Supabase direct: postgresql+asyncpg://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres
 # Supabase Session pooler (IPv4-only networks): postgresql+asyncpg://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
 
@@ -1301,7 +1301,7 @@ MODEL_SMART=openai/gpt-oss-20b
 GROQ_REASONING_EFFORT=low
 # qwen/qwen3*: none (no reasoning tokens) | default | low | medium | high, or empty
 GROQ_QWEN_REASONING_EFFORT=none
-OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
 OLLAMA_MODEL=qwen2.5:7b
 OLLAMA_TIMEOUT_SECONDS=60
 LLM_MAX_TOKENS_FAST=300
