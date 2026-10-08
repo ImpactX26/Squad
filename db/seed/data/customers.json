@@ -1,0 +1,38 @@
+[
+  {
+    "email": "riya.sharma@example.com",
+    "full_name": "Riya Sharma",
+    "demo_channel": "discord",
+    "devices": [
+      {"serial_number": "AX14-7F3K92", "model_number": "AX14", "color": "Silver",
+       "config": {"ram_gb": 16, "storage": "512GB SSD"}, "purchase_date": "2024-06-12"}
+    ]
+  },
+  {
+    "email": "aman.verma@example.com",
+    "full_name": "Aman Verma",
+    "demo_channel": "telegram",
+    "devices": [
+      {"serial_number": "VX15-Q8M2D5", "model_number": "VX15", "color": "Shadow Black",
+       "config": {"ram_gb": 16, "storage": "1TB SSD", "gpu": "RTX 4060"}, "purchase_date": "2026-03-14"}
+    ]
+  },
+  {
+    "email": "sneha.kulkarni@example.com",
+    "full_name": "Sneha Kulkarni",
+    "demo_channel": "email",
+    "devices": [
+      {"serial_number": "PA7-3KX9TB", "model_number": "PA7", "color": "Midnight Blue",
+       "config": {}, "purchase_date": "2026-05-02"}
+    ]
+  },
+  {
+    "email": "rahul.nair@example.com",
+    "full_name": "Rahul Nair",
+    "demo_channel": "web",
+    "devices": [
+      {"serial_number": "LB13-W4N7PC", "model_number": "LB13", "color": "Mist Grey",
+       "config": {"ram_gb": 16, "storage": "512GB SSD"}, "purchase_date": "2025-01-20"}
+    ]
+  }
+]

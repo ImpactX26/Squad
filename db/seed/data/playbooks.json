@@ -1,0 +1,118 @@
+[
+  {"key": "laptop-battery", "issue_type": "battery", "category": "laptop", "title": "Battery not charging",
+   "steps": [
+     {"step": "Try another adapter and wall socket", "expected": "The charging light comes on within a minute", "resolves_if": "It charges with the other adapter: replace the charger"},
+     {"step": "BIOS battery reset: unplug, hold power for 30 seconds, then reconnect", "expected": "The battery percentage starts rising", "resolves_if": "It charges after the reset"},
+     {"step": "Battery health test (powercfg /batteryreport on Windows)", "expected": "Full-charge capacity close to design capacity", "resolves_if": "Capacity is under 50% of design: replace the battery"},
+     {"step": "Check the charging port for damage or debris", "expected": "The plug sits firmly without wobbling", "resolves_if": "A loose or damaged port needs a technician"},
+     {"step": "Replace the battery", "expected": "Charges to 100% and holds charge", "resolves_if": "Battery replacement fixes it"}
+   ]},
+  {"key": "laptop-charging", "issue_type": "charging", "category": "laptop", "title": "Charger or charging port not working",
+   "steps": [
+     {"step": "Check the charger's light and try another wall socket", "expected": "The charger light is on", "resolves_if": "It works on another socket"},
+     {"step": "Inspect the cable for cuts, bends or burn marks", "expected": "The cable is undamaged", "resolves_if": "A damaged cable: replace the charger"},
+     {"step": "Try a known-good charger of the same wattage", "expected": "The laptop charges", "resolves_if": "It charges: replace the charger"},
+     {"step": "Inspect the laptop's charging port", "expected": "The plug sits firmly", "resolves_if": "A loose port needs a technician"}
+   ]},
+  {"key": "laptop-display", "issue_type": "display", "category": "laptop", "title": "No display or flickering screen",
+   "steps": [
+     {"step": "Connect an external monitor", "expected": "The external monitor shows a picture", "resolves_if": "External works: the panel or its cable is at fault"},
+     {"step": "Raise the brightness and toggle the display shortcut (Fn key)", "expected": "The screen lights up", "resolves_if": "It was set to minimum or off"},
+     {"step": "Update or roll back the graphics driver", "expected": "Flicker stops", "resolves_if": "A driver change stops the flicker"},
+     {"step": "Open and close the lid slowly while watching the screen", "expected": "No flicker at any angle", "resolves_if": "Flicker at some angles: the display cable needs a technician"},
+     {"step": "Replace the display panel", "expected": "A clear, stable picture", "resolves_if": "Display replacement fixes it"}
+   ]},
+  {"key": "laptop-keyboard", "issue_type": "keyboard", "category": "laptop", "title": "Keys not working",
+   "steps": [
+     {"step": "Test the keys in the BIOS setup screen or with an on-screen key tester", "expected": "Every key registers", "resolves_if": "Keys work in the BIOS: it is a software or driver problem"},
+     {"step": "Clean under the keys with compressed air", "expected": "Keys press smoothly", "resolves_if": "Debris was blocking them"},
+     {"step": "Reinstall the keyboard driver from Device Manager", "expected": "Keys respond after a restart", "resolves_if": "The driver reinstall fixes it"},
+     {"step": "Replace the keyboard", "expected": "Every key works", "resolves_if": "Keyboard replacement fixes it"}
+   ]},
+  {"key": "laptop-overheating", "issue_type": "overheating", "category": "laptop", "title": "Overheating and loud fan",
+   "steps": [
+     {"step": "Use it on a hard, flat surface with the vents clear", "expected": "Temperatures drop", "resolves_if": "Blocked vents were the cause"},
+     {"step": "Check Task Manager for a process using high CPU", "expected": "CPU idles under 10%", "resolves_if": "Closing a runaway process fixes it"},
+     {"step": "Update the BIOS and power-management drivers", "expected": "The fan profile normalises", "resolves_if": "The update fixes it"},
+     {"step": "Clean the vents and fan with compressed air", "expected": "Fan noise drops", "resolves_if": "Dust was the cause"},
+     {"step": "Replace the fan", "expected": "Quiet fan, normal temperatures", "resolves_if": "Fan replacement fixes it"}
+   ]},
+  {"key": "laptop-boot", "issue_type": "boot", "category": "laptop", "title": "Won't boot or no power",
+   "steps": [
+     {"step": "Hard reset: unplug, hold power for 30 seconds, then plug in and start", "expected": "Power and keyboard lights come on", "resolves_if": "It starts after the reset"},
+     {"step": "Start with only the charger connected, no USB devices", "expected": "The manufacturer logo appears", "resolves_if": "A connected device was blocking start-up"},
+     {"step": "Check whether the BIOS setup screen opens (F2 at start-up)", "expected": "The BIOS screen opens", "resolves_if": "The BIOS opens: the operating system or the drive is at fault"},
+     {"step": "Reset the BIOS to defaults and replace the CMOS battery if the clock keeps resetting", "expected": "Date and time stay correct", "resolves_if": "A CMOS battery replacement fixes it"},
+     {"step": "Run the drive self-test from the BIOS", "expected": "The drive passes", "resolves_if": "A failed drive needs an SSD replacement"}
+   ]},
+  {"key": "laptop-os", "issue_type": "os", "category": "laptop", "title": "Blue screen (BSOD) or corrupted operating system",
+   "steps": [
+     {"step": "Note the stop code shown on the blue screen", "expected": "A stop code such as CRITICAL_PROCESS_DIED", "resolves_if": "The code points to a known driver to fix"},
+     {"step": "Start in safe mode and uninstall the latest update or driver", "expected": "It starts normally", "resolves_if": "Removing the update fixes it"},
+     {"step": "Run sfc /scannow and DISM /RestoreHealth", "expected": "No integrity violations remain", "resolves_if": "The repair fixes it"},
+     {"step": "Run the drive self-test", "expected": "The drive passes", "resolves_if": "A failed drive needs an SSD replacement"},
+     {"step": "Reinstall the operating system", "expected": "A clean, stable system", "resolves_if": "OS reinstall fixes it"}
+   ]},
+  {"key": "laptop-performance", "issue_type": "performance", "category": "laptop", "title": "Slow performance",
+   "steps": [
+     {"step": "Check free disk space (keep at least 15% free)", "expected": "Enough free space", "resolves_if": "Freeing space fixes it"},
+     {"step": "Disable unneeded start-up apps in Task Manager", "expected": "Faster start-up", "resolves_if": "Fewer start-up apps fix it"},
+     {"step": "Run a malware scan", "expected": "No threats found", "resolves_if": "Removing malware fixes it"},
+     {"step": "Check the drive's health (SMART status)", "expected": "Healthy", "resolves_if": "A failing drive needs an SSD replacement"},
+     {"step": "Check memory use under normal work", "expected": "Under 80% used", "resolves_if": "Always above 80%: a RAM upgrade helps"}
+   ]},
+  {"key": "laptop-connectivity", "issue_type": "connectivity", "category": "laptop", "title": "Wi-Fi keeps dropping",
+   "steps": [
+     {"step": "Forget the network and connect again", "expected": "A stable connection", "resolves_if": "Reconnecting fixes it"},
+     {"step": "Turn off power saving for the Wi-Fi adapter in Device Manager", "expected": "No drops while idle", "resolves_if": "Power saving was dropping it"},
+     {"step": "Update the Wi-Fi driver", "expected": "No drops for an hour", "resolves_if": "The driver update fixes it"},
+     {"step": "Test on another network or a phone hotspot", "expected": "Stable elsewhere", "resolves_if": "Stable elsewhere: the router is the problem"}
+   ]},
+  {"key": "laptop-driver", "issue_type": "driver", "category": "laptop", "title": "Touchpad or device stopped working after an update",
+   "steps": [
+     {"step": "Check the touchpad isn't turned off (Fn shortcut or Settings)", "expected": "The touchpad responds", "resolves_if": "It was turned off"},
+     {"step": "Roll back the driver in Device Manager", "expected": "The device works again", "resolves_if": "The rollback fixes it"},
+     {"step": "Install the latest driver from the support site", "expected": "The device works", "resolves_if": "The new driver fixes it"}
+   ]},
+  {"key": "laptop-audio", "issue_type": "audio", "category": "laptop", "title": "Speaker crackle or no sound",
+   "steps": [
+     {"step": "Check the output device and volume in sound settings", "expected": "The speakers are selected and unmuted", "resolves_if": "The wrong output was selected"},
+     {"step": "Test with headphones", "expected": "Clear sound in headphones", "resolves_if": "Clear in headphones: the speakers need a technician"},
+     {"step": "Reinstall the audio driver", "expected": "Clear sound", "resolves_if": "The driver reinstall fixes it"}
+   ]},
+  {"key": "desktop-boot", "issue_type": "boot", "category": "desktop", "title": "Desktop won't power on",
+   "steps": [
+     {"step": "Check the power cable and the PSU switch at the back", "expected": "The power light comes on", "resolves_if": "It was switched off or unplugged"},
+     {"step": "Disconnect every USB device and try again", "expected": "Fans spin up", "resolves_if": "A device was shorting it"},
+     {"step": "Reset the BIOS by removing the CMOS battery for a minute", "expected": "It starts and keeps the clock", "resolves_if": "The clock keeps resetting: replace the CMOS battery"},
+     {"step": "Reseat the RAM sticks", "expected": "It starts without beeps", "resolves_if": "Reseating fixes it"}
+   ]},
+  {"key": "desktop-performance", "issue_type": "performance", "category": "desktop", "title": "Desktop slow or disk errors",
+   "steps": [
+     {"step": "Check the drive's health (SMART status)", "expected": "Healthy", "resolves_if": "A failing drive needs an SSD replacement"},
+     {"step": "Check free disk space and start-up apps", "expected": "At least 15% free, few start-up apps", "resolves_if": "Cleaning up fixes it"},
+     {"step": "Check memory use under normal work", "expected": "Under 80% used", "resolves_if": "Always above 80%: a RAM upgrade helps"},
+     {"step": "Clean the case fans and check temperatures", "expected": "CPU under 80°C under load", "resolves_if": "A failed case fan needs replacing"}
+   ]},
+  {"key": "headphones-audio", "issue_type": "audio", "category": "headphones", "title": "One earcup dead or crackling",
+   "steps": [
+     {"step": "Check the balance slider in the phone or PC sound settings", "expected": "Centred", "resolves_if": "The balance was off-centre"},
+     {"step": "Test with another phone or PC", "expected": "Both earcups play", "resolves_if": "Both play: the first device is the problem"},
+     {"step": "Factory-reset the headphones (hold power and volume down for 10 seconds)", "expected": "Both earcups play after pairing again", "resolves_if": "The reset fixes it"},
+     {"step": "Update the firmware from the Pulse app", "expected": "Latest firmware installed", "resolves_if": "The update fixes it"},
+     {"step": "Inspect the ear cushion and driver grille for damage", "expected": "No tears or debris", "resolves_if": "Torn cushions: an ear cushion replacement"}
+   ]},
+  {"key": "headphones-connectivity", "issue_type": "connectivity", "category": "headphones", "title": "Bluetooth keeps disconnecting",
+   "steps": [
+     {"step": "Forget the headphones on the phone and pair again", "expected": "A stable connection", "resolves_if": "Pairing again fixes it"},
+     {"step": "Keep the phone within 5 metres with no walls between", "expected": "No drops", "resolves_if": "Range was the cause"},
+     {"step": "Turn off multipoint in the Pulse app", "expected": "No drops", "resolves_if": "A second device was taking the connection"},
+     {"step": "Update the firmware from the Pulse app", "expected": "Latest firmware installed", "resolves_if": "The update fixes it"}
+   ]},
+  {"key": "headphones-charging", "issue_type": "charging", "category": "headphones", "title": "Headphones won't charge",
+   "steps": [
+     {"step": "Try another USB-C cable and a 5V wall adapter", "expected": "The charging light comes on", "resolves_if": "It charges with the other cable"},
+     {"step": "Clean the USB-C port gently with a dry brush", "expected": "The cable clicks in firmly", "resolves_if": "Debris was blocking it"},
+     {"step": "Leave it charging for 30 minutes before trying to turn it on", "expected": "It turns on", "resolves_if": "A fully drained battery needed time"}
+   ]}
+]

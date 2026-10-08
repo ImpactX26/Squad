@@ -1,0 +1,14 @@
+[
+  {"code": "BATTERY_REPLACE", "name": "Battery replacement", "part_type": "battery", "labour_fee": "1.50", "requires_visit": true, "required_skill": "battery"},
+  {"code": "CMOS_REPLACE", "name": "CMOS battery replacement", "part_type": "cmos_battery", "labour_fee": "1.00", "requires_visit": true, "required_skill": "cmos"},
+  {"code": "DISPLAY_REPLACE", "name": "Display replacement", "part_type": "display", "labour_fee": "2.00", "requires_visit": true, "required_skill": "display"},
+  {"code": "KEYBOARD_REPLACE", "name": "Keyboard replacement", "part_type": "keyboard", "labour_fee": "1.50", "requires_visit": true, "required_skill": "keyboard"},
+  {"code": "FAN_REPLACE", "name": "Fan replacement (overheating)", "part_type": "fan", "labour_fee": "1.20", "requires_visit": true, "required_skill": "fan"},
+  {"code": "SSD_REPLACE", "name": "SSD replacement (failed or corrupted drive)", "part_type": "ssd", "labour_fee": "1.50", "requires_visit": true, "required_skill": "ssd"},
+  {"code": "SSD_UPGRADE", "name": "SSD upgrade", "part_type": "ssd", "labour_fee": "1.20", "requires_visit": true, "required_skill": "ssd"},
+  {"code": "RAM_UPGRADE", "name": "RAM upgrade", "part_type": "ram", "labour_fee": "1.00", "requires_visit": true, "required_skill": "ram"},
+  {"code": "CHARGER_REPLACE", "name": "Charger replacement (shipped)", "part_type": "charger", "labour_fee": "1.00", "requires_visit": false, "required_skill": null},
+  {"code": "OS_REINSTALL", "name": "OS reinstall (corrupted OS or won't boot)", "part_type": null, "labour_fee": "2.00", "requires_visit": true, "required_skill": "software"},
+  {"code": "EAR_CUSHION_REPLACE", "name": "Ear cushion replacement (shipped)", "part_type": "ear_cushion", "labour_fee": "1.00", "requires_visit": false, "required_skill": null},
+  {"code": "UPI_TEST", "name": "UPI test payment", "part_type": null, "labour_fee": "1.00", "requires_visit": false, "required_skill": null}
+]
