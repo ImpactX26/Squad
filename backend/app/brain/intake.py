@@ -133,9 +133,8 @@ TIPS = "\n\nWhile you wait, you could try:\n{steps}"
 GREETING = ("Hi{name}! I'm the {company} support assistant. Tell me what's wrong with your device, with its serial "
             "number if you have it, and I'll open a ticket for you.")
 FOLLOW_UP = "Thanks for the update. An agent working on your ticket will reply to you here."
-# §15, with the number the customer can quote.
-FALLBACK_REPLY_TICKET = ("We've received your message and created a ticket; an agent will follow up. "
-                         "Your ticket number is {ticket_number}.")
+# §15, word for word.
+FALLBACK_REPLY_TICKET = "We've received your message and created a ticket; an agent will follow up."
 
 MAX_SERIAL_MISSES = 2  # §7.1: after 2 misses the ticket is created, flagged unverified_product
 SLOT_TTL = timedelta(hours=24)
@@ -322,7 +321,7 @@ class _Intake:
         plan = await self._notes_and_plan(created["ticket_id"], issue, device)
 
         if self.model_down:
-            text = FALLBACK_REPLY_TICKET.format(ticket_number=ticket_number)
+            text = FALLBACK_REPLY_TICKET
         elif device is None:
             text = TICKET_OPENED_UNVERIFIED.format(thanks=self._thanks, ticket_number=ticket_number,
                                                    title=issue.title)

@@ -307,7 +307,8 @@ async def test_no_model_with_a_known_serial_still_opens_the_ticket(conversation)
     # No summary, no plan (issue type other has no playbook), and one model call in all: no second
     # wait on a dead provider.
     assert hub.args("tickets__update_summary") == [] and hub.args("tickets__set_diagnostic_plan") == []
-    assert hub.replies == [FALLBACK_REPLY_TICKET.format(ticket_number="SR-2026-00042")]
+    assert hub.replies == [FALLBACK_REPLY_TICKET]
+    assert FALLBACK_REPLY_TICKET == "We've received your message and created a ticket; an agent will follow up."  # §15
     assert len(fakes.requests["groq"]) == 1
 
 
@@ -316,7 +317,7 @@ async def test_the_model_failing_after_the_ticket_keeps_the_playbook_plan(conver
     await handle_inbound(message("VX15-Q8M2D5 battery dead"), hub=hub, llm=llm)
     assert hub.args("tickets__set_diagnostic_plan") == [{"ticket_id": TICKET, "steps": PLAYBOOK,
                                                          "suggested_by": "playbook"}]
-    assert hub.replies == [FALLBACK_REPLY_TICKET.format(ticket_number="SR-2026-00042")]
+    assert hub.replies == [FALLBACK_REPLY_TICKET]
 
 
 async def test_the_fallback_provider_answers_when_groq_is_down(conversation):
