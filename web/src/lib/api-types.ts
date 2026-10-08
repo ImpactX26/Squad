@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Internal Event
+         * @description Publish an MCP server's event: handlers run and every /ws/staff connection gets it.
+         */
+        post: operations["internal_event_internal_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -77,12 +97,47 @@ export interface components {
              */
             db: "ok" | "unreachable";
         };
+        /**
+         * InternalEventIn
+         * @description What an MCP server POSTs to /internal/events.
+         */
+        InternalEventIn: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "message.received" | "message.sent" | "ticket.created" | "ticket.updated" | "ticket.followup" | "agent.tool_called" | "payment.link_sent" | "payment.utr_submitted" | "payment.paid" | "payment.failed" | "job.assigned" | "job.status_changed" | "job.completed" | "job.rejected" | "stock.low" | "notification.created";
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+        };
         /** LoginIn */
         LoginIn: {
             /** Email */
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * StaffEvent
+         * @description One event, as /ws/staff sends it: {type, data, ts}.
+         */
+        StaffEvent: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "message.received" | "message.sent" | "ticket.created" | "ticket.updated" | "ticket.followup" | "agent.tool_called" | "payment.link_sent" | "payment.utr_submitted" | "payment.paid" | "payment.failed" | "job.assigned" | "job.status_changed" | "job.completed" | "job.rejected" | "stock.low" | "notification.created";
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
         };
         /**
          * StaffOut
@@ -247,6 +302,55 @@ export interface operations {
             };
             /** @description Sign in again. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    internal_event_internal_events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-internal-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalEventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffEvent"];
+                };
+            };
+            /** @description Wrong or missing X-Internal-Key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description INTERNAL_API_KEY is not set */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

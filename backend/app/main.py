@@ -6,9 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, health
+from app.api import auth, health, internal, ws
 from app.core.config import Settings, get_settings
 from app.core.db import DB_ERRORS
+from app.core.logging import install_token_redaction
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ async def database_unavailable(request: Request, exc: Exception) -> JSONResponse
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    install_token_redaction()
     app = FastAPI(title=settings.app_name)
     app.state.settings = settings  # read by routes through app.api.deps.get_app_settings
     app.add_middleware(
@@ -35,6 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.add_exception_handler(error, database_unavailable)
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(ws.router)
+    app.include_router(internal.router)
     return app
 
 
