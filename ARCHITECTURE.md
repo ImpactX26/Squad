@@ -1205,7 +1205,7 @@ servicemesh/
 │   │   │   ├── workflows.py        # payment.paid, job.completed, stock.low chains
 │   │   │   ├── embeddings.py       # fastembed
 │   │   │   └── prompts/            # *.md system prompts
-│   │   ├── channels/               # [P2] base.py, discord_bot.py, telegram_bot.py, email_channel.py, web_chat.py, dispatcher.py, identity.py
+│   │   ├── channels/               # [P2] base.py, discord_bot.py, telegram_bot.py, email_channel.py, web_chat.py, dispatcher.py, identity.py, inbound.py (adapter → intake: typing, fallback reply), lifespan.py (adapters + dispatcher in the API process)
 │   │   ├── payments/               # [P1; upi_verifier.py P2] UPI (§7.6): money.py, details.py (booking details), invoice.py, receipt_pdf.py (stretch), upi_verifier.py (bank alerts → payment.paid)
 │   │   ├── assets/                 # logo.png (from web/src/app/icon.svg) and fonts/ (DejaVu Sans + its licence) for the PDF receipt
 │   │   └── templates/email/        # [P2] reply, payment_link, payment_confirmed, job_assigned, visit_scheduled, restock_alert (.html + .txt)
