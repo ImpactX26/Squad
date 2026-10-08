@@ -1,30 +1,28 @@
 """The only module that talks to a text model (ARCHITECTURE.md §4.6).
 
-complete() and complete_json() try LLM_PROVIDER, then LLM_FALLBACK_PROVIDER:
-1. Groq is skipped when GROQ_API_KEY is empty.
-2. A Groq 429 whose retry-after is 2 s or less is waited out and retried once.
-3. Any other 429, a timeout, a connection error or a 5xx moves on to the fallback (once).
-   Any other 4xx (bad request, bad key, unknown model) stops there: no provider will do better.
-4. Nothing left: LLMUnavailable. Customer-path callers send the §15 fallback reply.
+Free tiers only. Groq (OpenAI-compatible) serves text and tool loops. When it answers 429,
+times out, can't be reached, or returns a 5xx, the call goes once to the fallback provider
+(Ollama on the 16GB laptop). Both are called through the openai SDK with its own retries off,
+so a customer never waits on SDK backoff. When every provider fails, LLMUnavailable is raised
+and customer-path callers send the friendly fallback reply (§15).
 
-Groq's tool_use_failed (a tool argument that doesn't match its schema) and a JSON reply that
-doesn't validate are repaired once by asking again with the rejection; an empty gpt-oss reply cut
-off by max_tokens (its reasoning used them up) is retried once with double the limit (§18.2).
-
-`make llm-check` runs this module: one tiny request per provider and model, with Groq's limits.
+Check each provider and Groq's remaining limits (never prints keys):
+    cd backend && uv run python -m app.brain.llm --check      # make llm-check
 """
 
+import argparse
 import asyncio
 import json
 import logging
 import re
-import sys
 import time
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+import types
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, replace
 from functools import lru_cache
-from typing import Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar, Union, get_args, get_origin
 
+import httpx
 import httpx2
 import openai
 from openai import AsyncOpenAI
@@ -35,305 +33,519 @@ from app.core.config import Settings, get_settings
 log = logging.getLogger(__name__)
 
 Tier = Literal["fast", "smart"]
-T = TypeVar("T", bound=BaseModel)
+Provider = Literal["groq", "ollama"]
+M = TypeVar("M", bound=BaseModel)
+T = TypeVar("T")
 
-MAX_CONCURRENT_CALLS = 4  # bursts stay inside Groq's per-minute limits (§4.5)
-QUICK_RETRY_SECONDS = 2.0
 CONNECT_TIMEOUT_SECONDS = 2.0
-REPAIRABLE_CODES = {"tool_use_failed", "json_validate_failed"}
-THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+# A 429 whose retry-after is at most this is retried on the primary instead of falling back.
+MAX_RETRY_AFTER_SECONDS = 2.0
+CHECK_MAX_TOKENS = 64
+
+# One process-wide limit across providers, so bursts don't trip Groq's ~30 requests/min.
+_semaphore = asyncio.Semaphore(4)
 
 
 class LLMUnavailable(Exception):
-    """No provider produced an answer."""
+    """No provider could answer. Customer-path callers catch this and send the §15 fallback reply."""
 
 
-@dataclass
-class LLMResult:
-    text: str
-    tool_calls: list[dict[str, Any]]
-    finish_reason: str | None
-    model: str  # "<provider>:<model>", what ai_runs.model records
-    input_tokens: int | None
-    output_tokens: int | None
-    latency_ms: int
-
-
-class _Fallback(Exception):
-    """This provider failed in a way the next one may not."""
-
-
-class _Rejected(Exception):
-    """The provider refused the request itself (a 4xx): don't fall back."""
-
-
-class _Repairable(Exception):
-    """A tool call or JSON reply the provider rejected: ask once more with the reason."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
+class LLMBadOutput(LLMUnavailable):
+    """complete_json got invalid JSON twice: the first answer and its one repair."""
 
 
 @dataclass(frozen=True)
-class _Provider:
+class ToolCall:
+    id: str
     name: str
-    client: AsyncOpenAI
-    fast_model: str
-    smart_model: str
+    arguments: dict[str, Any] | None  # None when the model's arguments aren't a JSON object
+    raw_arguments: str
 
-    def model(self, tier: Tier) -> str:
-        return self.fast_model if tier == "fast" else self.smart_model
+
+@dataclass(frozen=True)
+class LLMResult:
+    text: str
+    tool_calls: list[ToolCall]
+    provider: str
+    model: str
+    input_tokens: int | None
+    output_tokens: int | None
+    latency_ms: int
+    finish_reason: str | None
+
+    def assistant_message(self) -> dict[str, Any]:
+        """This reply as an OpenAI assistant message, appended before its tool results."""
+        message: dict[str, Any] = {"role": "assistant", "content": self.text}
+        if self.tool_calls:
+            message["tool_calls"] = [
+                {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": tc.raw_arguments}}
+                for tc in self.tool_calls
+            ]
+        return message
 
 
 class LLM:
+    """Provider clients and the fallback order. The module-level functions use a shared instance.
+
+    Tests pass their own settings and an httpx client built on httpx.MockTransport.
+    """
+
     def __init__(
         self,
-        settings: Settings,
+        settings: Settings | None = None,
         *,
-        http_client: httpx2.AsyncClient | None = None,
+        http_client: httpx.AsyncClient | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        self.settings = settings
+        self.settings = settings or get_settings()
+        self._http_client = http_client
         self._sleep = sleep
-        self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
-        self.providers = self._build_providers(http_client)
+        self._clients: dict[str, AsyncOpenAI] = {}
 
-    def _build_providers(self, http_client: httpx2.AsyncClient | None) -> list[_Provider]:
-        s = self.settings
-        providers: list[_Provider] = []
-        for name in dict.fromkeys(n.strip().lower() for n in (s.llm_provider, s.llm_fallback_provider) if n.strip()):
-            if name == "groq":
-                if not s.groq_api_key:
-                    continue
-                client = AsyncOpenAI(
-                    api_key=s.groq_api_key, base_url=s.groq_base_url, max_retries=0, http_client=http_client,
-                    timeout=httpx2.Timeout(s.ai_timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS),
-                )
-                providers.append(_Provider("groq", client, s.model_fast, s.model_smart))
-            elif name == "ollama":
-                client = AsyncOpenAI(
-                    api_key="ollama", base_url=s.ollama_base_url, max_retries=0, http_client=http_client,
-                    timeout=httpx2.Timeout(s.ollama_timeout_seconds, connect=CONNECT_TIMEOUT_SECONDS),
-                )
-                providers.append(_Provider("ollama", client, s.ollama_model, s.ollama_model))
+    def client(self, provider: Provider) -> AsyncOpenAI:
+        if provider not in self._clients:
+            s = self.settings
+            if provider == "groq":
+                base_url, api_key, read_timeout = s.groq_base_url, s.groq_api_key, s.ai_timeout_seconds
             else:
-                log.warning("unknown LLM provider %r ignored (groq | ollama)", name)
-        return providers
+                base_url, api_key, read_timeout = s.ollama_base_url, "ollama", s.ollama_timeout_seconds
+            self._clients[provider] = AsyncOpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                max_retries=0,  # fallback is ours; SDK backoff would make the customer wait
+                timeout=openai.Timeout(read_timeout, connect=CONNECT_TIMEOUT_SECONDS),
+                http_client=self._http_client,
+            )
+        return self._clients[provider]
 
-    # ---------- public ----------
+    def providers(self) -> list[Provider]:
+        """Primary first, then the fallback when it's set and different."""
+        s = self.settings
+        order: list[Provider] = [s.llm_provider]
+        if s.llm_fallback_provider and s.llm_fallback_provider != s.llm_provider:
+            order.append(s.llm_fallback_provider)
+        return order
+
+    def model_for(self, provider: Provider, tier: Tier) -> str:
+        if provider == "ollama":
+            return self.settings.ollama_model
+        return self.settings.model_fast if tier == "fast" else self.settings.model_smart
+
+    def _max_tokens(self, tier: Tier) -> int:
+        return self.settings.llm_max_tokens_fast if tier == "fast" else self.settings.llm_max_tokens_smart
+
+    def _extras(self, provider: Provider, model: str) -> dict[str, Any]:
+        """Groq's per-family reasoning controls. Groq rejects the wrong value for a family.
+
+        gpt-oss takes low|medium|high. Qwen3 also takes none ("no reasoning tokens at all") and
+        default, which gpt-oss rejects, so the two have their own settings.
+        """
+        if provider != "groq":
+            return {}
+        if model.startswith("openai/gpt-oss"):
+            effort = self.settings.groq_reasoning_effort
+        elif is_qwen3(model):
+            effort = self.settings.groq_qwen_reasoning_effort
+        else:
+            return {}
+        return {"extra_body": {"reasoning_effort": effort}} if effort else {}
+
+    # ---------- public API ----------
 
     async def complete(
         self,
         messages: list[dict[str, Any]],
-        tier: Tier = "fast",
+        *,
+        tier: Tier,
         max_tokens: int | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResult:
+        """With tools, one repair retry when Groq rejects the model's tool call (arguments off schema)."""
         try:
-            return await self._complete(messages, tier, max_tokens, tools, json_mode=False)
-        except _Repairable as first:
-            repaired = [*messages, {"role": "user", "content": (
-                f"Your last tool call was rejected: {first.message} "
-                "Call the tool again with arguments that match its schema exactly.")}]
-            try:
-                return await self._complete(repaired, tier, max_tokens, tools, json_mode=False)
-            except _Repairable as second:
-                raise LLMUnavailable(f"tool call rejected twice: {second.message}") from second
+            return await self._complete(messages, tier=tier, max_tokens=max_tokens, tools=tools, json_mode=False)
+        except LLMUnavailable as e:
+            rejected = _rejected_tool_call(e) if tools else None
+            if rejected is None:
+                raise
+            log.info("tool call rejected by the provider, repairing once: %s", rejected)
+            repair = [*messages, {"role": "user", "content": (
+                f"Your last tool call was rejected: {rejected}. Call the tool again with arguments that match its "
+                "schema exactly (integers as numbers, true/false as booleans; leave out optional ones you don't need).")}]
+            return await self._complete(repair, tier=tier, max_tokens=max_tokens, tools=tools, json_mode=False)
 
-    async def complete_json(self, messages: list[dict[str, Any]], schema: type[T], tier: Tier = "fast") -> tuple[T, LLMResult]:
-        """One reply in JSON mode, validated as `schema`; one repair round, then LLMUnavailable."""
-        shape = json.dumps(schema.model_json_schema(), separators=(",", ":"))
-        conversation = [*messages, {"role": "system", "content": (
-            f"Reply with one JSON object and nothing else. It must match this JSON schema: {shape}")}]
-        for attempt in (1, 2):
-            text = None
+    async def complete_json(self, messages: list[dict[str, Any]], schema: type[M], *, tier: Tier) -> tuple[M, LLMResult]:
+        """JSON mode, validated by `schema`, with one repair retry that shows the model its error.
+
+        JSON mode rather than a forced tool call, because Ollama's OpenAI endpoint has no tool_choice.
+        """
+        start = time.monotonic()
+        convo = _with_json_instruction(messages, schema)
+        total: LLMResult | None = None
+        for attempt in range(2):
             try:
-                result = await self._complete(conversation, tier, None, None, json_mode=True)
-            except _Repairable as exc:
-                problem = exc.message
+                result = await self._complete(convo, tier=tier, max_tokens=None, tools=None, json_mode=True)
+            except LLMUnavailable as e:
+                bad = _failed_generation(e)  # Groq's 400 when the model's JSON didn't parse
+                if bad is None:
+                    raise
+                text, error = bad, "the reply was not valid JSON"
             else:
+                total = result if total is None else _add_usage(total, result)
                 text = result.text
                 try:
-                    return schema.model_validate_json(text), result
-                except ValidationError as exc:
-                    problem = "; ".join(
-                        f"{'.'.join(map(str, e['loc'])) or 'reply'}: {e['msg']}" for e in exc.errors(include_input=False)
-                    )[:500]
-            if attempt == 2:
-                raise LLMUnavailable(f"no valid JSON after one repair: {problem}")
-            if text:
-                conversation = [*conversation, {"role": "assistant", "content": text}]
-            conversation = [*conversation, {"role": "user", "content": (
-                f"That reply was not valid: {problem}. Reply with the corrected JSON object only.")}]
-        raise AssertionError("unreachable")
+                    parsed = schema.model_validate_json(_strip_code_fence(text))
+                    return parsed, replace(total, latency_ms=_elapsed_ms(start))
+                except ValidationError as e:
+                    error = _describe_validation_error(e)
+            if attempt == 0:
+                log.info("complete_json(%s) invalid, repairing once: %s", schema.__name__, error)
+                convo = [
+                    *convo,
+                    {"role": "assistant", "content": text[:2000]},
+                    {"role": "user", "content": f"That reply was invalid: {error}. Reply with only the corrected JSON object."},
+                ]
+        raise LLMBadOutput(f"{schema.__name__}: {error}")
 
-    # ---------- the fallback order ----------
+    async def stream_text(
+        self, messages: list[dict[str, Any]], *, tier: Tier, max_tokens: int | None = None
+    ) -> AsyncIterator[str]:
+        """Text deltas for SSE. Falls back only when the error comes before the first token."""
+        limit = max_tokens or self._max_tokens(tier)
+
+        async def open_stream(client: AsyncOpenAI, provider: Provider, model: str):
+            stream = await client.chat.completions.create(
+                model=model, messages=messages, max_tokens=limit, stream=True, **self._extras(provider, model)
+            )
+            chunks = stream.__aiter__()
+            try:
+                async for chunk in chunks:
+                    if delta := _delta_text(chunk):
+                        return stream, chunks, delta
+            except BaseException:
+                await stream.close()
+                raise
+            return stream, chunks, ""
+
+        stream, chunks, first = await self._with_fallback(tier, open_stream)
+        try:
+            if first:
+                yield first
+            async for chunk in chunks:
+                if delta := _delta_text(chunk):
+                    yield delta
+        except _UNAVAILABLE_ERRORS as e:
+            raise LLMUnavailable(f"stream broke after the first token: {_describe(e)}") from e
+        finally:
+            await stream.close()
+
+    # ---------- internals ----------
 
     async def _complete(
-        self, messages: list[dict[str, Any]], tier: Tier, max_tokens: int | None,
-        tools: list[dict[str, Any]] | None, *, json_mode: bool,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tier: Tier,
+        max_tokens: int | None,
+        tools: list[dict[str, Any]] | None,
+        json_mode: bool,
     ) -> LLMResult:
-        if not self.providers:
-            raise LLMUnavailable("no LLM provider is configured (GROQ_API_KEY is empty and there is no fallback)")
-        limit = max_tokens or (self.settings.llm_max_tokens_fast if tier == "fast" else self.settings.llm_max_tokens_smart)
-        failures = []
-        for provider in self.providers:
-            request = self.request(provider, tier, messages, limit, tools, json_mode)
-            try:
-                return await self._call(provider, request)
-            except _Fallback as exc:
-                failures.append(str(exc))
-                log.warning("LLM %s failed (%s); trying the next provider", provider.name, exc)
-            except _Rejected as exc:
-                raise LLMUnavailable(str(exc)) from exc
-        raise LLMUnavailable("every provider failed: " + "; ".join(failures))
+        start = time.monotonic()
+        limit = max_tokens or self._max_tokens(tier)
+        result = await self._complete_once(messages, tier, limit, tools, json_mode)
+        if not result.text and not result.tool_calls and result.finish_reason == "length":
+            # gpt-oss spends max_tokens on reasoning before any content; give it room once.
+            log.info("%s:%s returned no content at max_tokens=%d; retrying at %d", result.provider, result.model, limit, limit * 2)
+            result = _add_usage(result, await self._complete_once(messages, tier, limit * 2, tools, json_mode))
+        return replace(result, latency_ms=_elapsed_ms(start))
 
-    def request(
-        self, provider: _Provider, tier: Tier, messages: list[dict[str, Any]], max_tokens: int,
-        tools: list[dict[str, Any]] | None = None, json_mode: bool = False,
-    ) -> dict[str, Any]:
-        model = provider.model(tier)
-        request: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": max_tokens}
-        if tools:
-            request["tools"] = tools
-        if json_mode:
-            request["response_format"] = {"type": "json_object"}
-        effort = self._reasoning_effort(provider, model)
-        if effort:
-            # Groq rejects a value the model family doesn't know, so each family has its own setting.
-            request["extra_body"] = {"reasoning_effort": effort}
-        return request
+    async def _complete_once(
+        self,
+        messages: list[dict[str, Any]],
+        tier: Tier,
+        max_tokens: int,
+        tools: list[dict[str, Any]] | None,
+        json_mode: bool,
+    ) -> LLMResult:
+        async def call(client: AsyncOpenAI, provider: Provider, model: str):
+            kwargs: dict[str, Any] = {"model": model, "messages": messages, "max_tokens": max_tokens}
+            if tools:
+                kwargs["tools"] = tools
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            return provider, model, await client.chat.completions.create(**kwargs, **self._extras(provider, model))
 
-    def _reasoning_effort(self, provider: _Provider, model: str) -> str | None:
-        if provider.name != "groq":
-            return None
-        if model.startswith("openai/gpt-oss"):
-            return self.settings.groq_reasoning_effort or None
-        if model.startswith("qwen/qwen3"):
-            return self.settings.groq_qwen_reasoning_effort or None
-        return None
+        provider, model, response = await self._with_fallback(tier, call)
+        return _to_result(response, provider, model)
 
-    async def _call(self, provider: _Provider, request: dict[str, Any]) -> LLMResult:
-        quick_retry_used = doubled = False
-        while True:
-            started = time.perf_counter()
-            try:
-                async with self._semaphore:
-                    response = await provider.client.chat.completions.create(**request)
-            except openai.RateLimitError as exc:
-                wait = _retry_after(exc.response)
-                if provider.name == "groq" and not quick_retry_used and wait is not None and wait <= QUICK_RETRY_SECONDS:
-                    quick_retry_used = True
-                    await self._sleep(wait)
-                    continue
-                raise _Fallback(f"{provider.name} 429") from exc
-            except openai.APITimeoutError as exc:
-                raise _Fallback(f"{provider.name} timed out") from exc
-            except openai.APIConnectionError as exc:
-                raise _Fallback(f"{provider.name} unreachable") from exc
-            except openai.APIStatusError as exc:
-                if exc.status_code >= 500:
-                    raise _Fallback(f"{provider.name} {exc.status_code}") from exc
-                code, message = _error_detail(exc)
-                if exc.status_code == 400 and code in REPAIRABLE_CODES:
-                    raise _Repairable(message) from exc
-                raise _Rejected(f"{provider.name} {exc.status_code} {code or ''}".strip()) from exc
-
-            result = _result(provider, request["model"], response, started)
-            if (not doubled and request["model"].startswith("openai/gpt-oss") and result.finish_reason == "length"
-                    and not result.text and not result.tool_calls):
-                doubled = True
-                request = {**request, "max_tokens": request["max_tokens"] * 2}
+    async def _with_fallback(self, tier: Tier, call: Callable[[AsyncOpenAI, Provider, str], Awaitable[T]]) -> T:
+        failures: list[str] = []
+        providers = self.providers()
+        for i, provider in enumerate(providers):
+            model = self.model_for(provider, tier)
+            if provider == "groq" and not self.settings.groq_api_key:
+                failures.append("groq: GROQ_API_KEY is empty")
                 continue
-            return result
+            try:
+                return await self._attempt(provider, model, call, primary=i == 0)
+            except _UNAVAILABLE_ERRORS as e:
+                if isinstance(e, openai.APIStatusError) and e.status_code < 500 and e.status_code != 429:
+                    # A 4xx other than 429 is a bad request or key; another provider won't fix it.
+                    raise LLMUnavailable(f"{provider}:{model}: {_describe(e)}") from e
+                failures.append(f"{provider}:{model}: {_describe(e)}")
+                next_step = "; trying the fallback" if i + 1 < len(providers) else ""
+                log.warning("LLM %s:%s unavailable (%s)%s", provider, model, _describe(e), next_step)
+        raise LLMUnavailable("; ".join(failures) or "no LLM provider configured")
+
+    async def _attempt(
+        self, provider: Provider, model: str, call: Callable[[AsyncOpenAI, Provider, str], Awaitable[T]], *, primary: bool
+    ) -> T:
+        client = self.client(provider)
+        try:
+            async with _semaphore:
+                return await call(client, provider, model)
+        except openai.RateLimitError as e:
+            wait = _retry_after_seconds(e)
+            if not primary or wait is None or wait > MAX_RETRY_AFTER_SECONDS:
+                raise
+            log.info("%s:%s rate-limited; retrying once in %.1fs", provider, model, wait)
+        await self._sleep(wait)
+        async with _semaphore:
+            return await call(client, provider, model)
 
 
-def _retry_after(response: httpx2.Response | None) -> float | None:
-    try:
-        return float(response.headers["retry-after"]) if response is not None else None
-    except (KeyError, ValueError):
-        return None
-
-
-def _error_detail(exc: openai.APIStatusError) -> tuple[str | None, str]:
-    body = exc.body if isinstance(exc.body, dict) else {}
-    error = body.get("error", body) if isinstance(body.get("error", body), dict) else {}
-    return error.get("code"), str(error.get("message") or exc.message)[:500]
-
-
-def _result(provider: _Provider, model: str, response: Any, started: float) -> LLMResult:
-    choice = response.choices[0]
-    usage = getattr(response, "usage", None)
-    return LLMResult(
-        text=THINK_BLOCK.sub("", choice.message.content or "").strip(),
-        tool_calls=[call.model_dump() for call in (choice.message.tool_calls or [])],
-        finish_reason=choice.finish_reason,
-        model=f"{provider.name}:{model}",
-        input_tokens=getattr(usage, "prompt_tokens", None),
-        output_tokens=getattr(usage, "completion_tokens", None),
-        latency_ms=round((time.perf_counter() - started) * 1000),
-    )
+# Everything that counts as "this provider can't answer right now". Raw httpx errors can
+# surface while reading a stream, outside the SDK's own error mapping.
+_UNAVAILABLE_ERRORS = (openai.APIError, httpx.TransportError, httpx2.TransportError)
 
 
 @lru_cache
-def get_llm() -> LLM:
-    return LLM(get_settings())
+def default_llm() -> LLM:
+    return LLM()
 
 
 async def complete(
-    messages: list[dict[str, Any]], tier: Tier = "fast", max_tokens: int | None = None,
+    messages: list[dict[str, Any]],
+    *,
+    tier: Tier,
+    max_tokens: int | None = None,
     tools: list[dict[str, Any]] | None = None,
 ) -> LLMResult:
-    return await get_llm().complete(messages, tier, max_tokens, tools)
+    return await default_llm().complete(messages, tier=tier, max_tokens=max_tokens, tools=tools)
 
 
-async def complete_json(messages: list[dict[str, Any]], schema: type[T], tier: Tier = "fast") -> tuple[T, LLMResult]:
-    return await get_llm().complete_json(messages, schema, tier)
+async def complete_json(messages: list[dict[str, Any]], schema: type[M], *, tier: Tier) -> tuple[M, LLMResult]:
+    return await default_llm().complete_json(messages, schema, tier=tier)
 
 
-# ---------- make llm-check ----------
+async def stream_text(messages: list[dict[str, Any]], *, tier: Tier, max_tokens: int | None = None) -> AsyncIterator[str]:
+    async for delta in default_llm().stream_text(messages, tier=tier, max_tokens=max_tokens):
+        yield delta
 
-RATE_HEADERS = ("x-ratelimit-limit-requests", "x-ratelimit-remaining-requests", "x-ratelimit-reset-requests",
-                "x-ratelimit-limit-tokens", "x-ratelimit-remaining-tokens", "x-ratelimit-reset-tokens")
+
+# ---------- helpers ----------
 
 
-async def check(settings: Settings) -> bool:
-    """One tiny request per configured provider and model; Groq's model list and remaining limits."""
-    llm = LLM(settings)
-    print(f"Providers, in order: {', '.join(p.name for p in llm.providers) or 'none'}"
-          + ("" if settings.groq_api_key else "  (GROQ_API_KEY is empty, so Groq is skipped)"))
-    ok = bool(llm.providers)
-    for provider in llm.providers:
-        if provider.name == "groq":
-            try:
-                available = {m.id async for m in provider.client.models.list()}
-                for model in dict.fromkeys((provider.fast_model, provider.smart_model)):
-                    print(f"  groq model {model}: {'listed' if model in available else 'NOT in Groq model list'}")
-                    ok &= model in available
-            except openai.OpenAIError as exc:
-                print(f"  groq model list: failed ({type(exc).__name__})")
-                ok = False
-        tiers: list[Tier] = ["fast", "smart"] if provider.fast_model != provider.smart_model else ["fast"]
-        for tier in tiers:
-            limit = settings.llm_max_tokens_fast if tier == "fast" else settings.llm_max_tokens_smart
-            request = llm.request(provider, tier, [{"role": "user", "content": "Reply with the single word: ok"}], limit)
-            started = time.perf_counter()
-            try:
-                raw = await provider.client.chat.completions.with_raw_response.create(**request)
-            except openai.OpenAIError as exc:
-                status = getattr(exc, "status_code", None)
-                print(f"  {provider.name}:{request['model']} ({tier}): FAILED {type(exc).__name__}{f' {status}' if status else ''}")
-                ok = False
-                continue
-            result = _result(provider, request["model"], raw.parse(), started)
-            print(f"  {result.model} ({tier}): {result.latency_ms} ms, reply {result.text[:40]!r}, "
-                  f"finish {result.finish_reason}, tokens in/out {result.input_tokens}/{result.output_tokens}")
-            limits = {h.removeprefix("x-ratelimit-"): raw.headers[h] for h in RATE_HEADERS if h in raw.headers}
-            if limits:
-                print("    limits: " + ", ".join(f"{k} {v}" for k, v in limits.items()))
+def is_qwen3(model: str) -> bool:
+    """A Groq Qwen3 model id, e.g. qwen/qwen3.8-27b or qwen/qwen3-32b."""
+    return model.startswith("qwen/qwen3")
+
+
+def _to_result(response: Any, provider: str, model: str) -> LLMResult:
+    choice = response.choices[0] if response.choices else None
+    message = choice.message if choice else None
+    raw_calls = (message.tool_calls or []) if message else []
+    tool_calls = [
+        ToolCall(id=tc.id, name=tc.function.name, arguments=_parse_arguments(tc.function.arguments),
+                 raw_arguments=tc.function.arguments or "{}")
+        for tc in raw_calls
+        if getattr(tc, "function", None) is not None
+    ]
+    usage = response.usage
+    return LLMResult(
+        text=(message.content or "") if message else "",
+        tool_calls=tool_calls,
+        provider=provider,
+        model=model,
+        input_tokens=usage.prompt_tokens if usage else None,
+        output_tokens=usage.completion_tokens if usage else None,
+        latency_ms=0,
+        finish_reason=choice.finish_reason if choice else None,
+    )
+
+
+def _parse_arguments(raw: str | None) -> dict[str, Any] | None:
+    try:
+        value = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _delta_text(chunk: Any) -> str:
+    return (chunk.choices[0].delta.content or "") if chunk.choices else ""
+
+
+def _add(a: int | None, b: int | None) -> int | None:
+    return None if a is None and b is None else (a or 0) + (b or 0)
+
+
+def _add_usage(first: LLMResult, second: LLMResult) -> LLMResult:
+    """`second`'s answer, with the tokens of both calls."""
+    return replace(
+        second,
+        input_tokens=_add(first.input_tokens, second.input_tokens),
+        output_tokens=_add(first.output_tokens, second.output_tokens),
+    )
+
+
+def _elapsed_ms(start: float) -> int:
+    return round((time.monotonic() - start) * 1000)
+
+
+def _retry_after_seconds(e: openai.RateLimitError) -> float | None:
+    try:
+        return float(e.response.headers.get("retry-after", ""))
+    except ValueError:
+        return None
+
+
+def _describe(e: BaseException) -> str:
+    if isinstance(e, openai.APITimeoutError) or isinstance(e, (httpx.TimeoutException, httpx2.TimeoutException)):
+        return "timeout"
+    if isinstance(e, openai.APIConnectionError) or isinstance(e, (httpx.TransportError, httpx2.TransportError)):
+        return "connection error"
+    if isinstance(e, openai.APIStatusError):
+        return f"HTTP {e.status_code}: {e.message[:200]}"
+    return f"{type(e).__name__}: {str(e)[:200]}"
+
+
+def _failed_generation(e: LLMUnavailable) -> str | None:
+    cause = e.__cause__
+    if isinstance(cause, openai.BadRequestError) and cause.code == "json_validate_failed":
+        body = cause.body if isinstance(cause.body, dict) else {}
+        return str(body.get("failed_generation") or "")
+    return None
+
+
+def _rejected_tool_call(e: LLMUnavailable) -> str | None:
+    """Groq's 400 when a tool call's arguments don't match the tool's schema (code tool_use_failed)."""
+    cause = e.__cause__
+    if not isinstance(cause, openai.BadRequestError):
+        return None
+    if cause.code == "tool_use_failed" or "tool call validation failed" in (cause.message or "").lower():
+        return (cause.message or "arguments did not match the schema")[:300]
+    return None
+
+
+def _strip_code_fence(text: str) -> str:
+    match = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", text, re.DOTALL)
+    return match.group(1) if match else text
+
+
+def _describe_validation_error(e: ValidationError) -> str:
+    parts = []
+    for err in e.errors()[:5]:
+        where = ".".join(str(p) for p in err["loc"]) or "reply"
+        parts.append(f"{where}: {err['msg']}")
+    return "; ".join(parts)
+
+
+def _with_json_instruction(messages: list[dict[str, Any]], schema: type[BaseModel]) -> list[dict[str, Any]]:
+    instruction = f"Reply with only a JSON object of this shape: {describe_schema(schema)}"
+    convo = [dict(m) for m in messages]
+    if convo and convo[0].get("role") == "system":
+        convo[0]["content"] = f"{convo[0]['content']}\n\n{instruction}"
+    else:
+        convo.insert(0, {"role": "system", "content": instruction})
+    return convo
+
+
+def describe_schema(schema: type[BaseModel]) -> str:
+    """A compact shape like {"intent":"new_issue|follow_up","symptoms":["string"]}: far fewer tokens than JSON Schema."""
+    return json.dumps(_model_shape(schema), separators=(",", ":"))
+
+
+def _model_shape(schema: type[BaseModel]) -> dict[str, Any]:
+    shape = {}
+    for name, field in schema.model_fields.items():
+        value = _type_shape(field.annotation)
+        if field.description and isinstance(value, str):
+            value = f"{value} ({field.description})"
+        shape[field.alias or name] = value
+    return shape
+
+
+def _type_shape(tp: Any) -> Any:
+    origin, args = get_origin(tp), get_args(tp)
+    if origin is Annotated:
+        return _type_shape(args[0])
+    if origin is Literal:
+        return "|".join(str(a) for a in args)
+    if origin in (Union, types.UnionType):
+        inner = [a for a in args if a is not type(None)]
+        shape = _type_shape(inner[0]) if len(inner) == 1 else "|".join(str(_type_shape(a)) for a in inner)
+        return f"{shape}|null" if type(None) in args and isinstance(shape, str) else shape
+    if origin in (list, tuple, set, frozenset):
+        return [_type_shape(args[0]) if args else "any"]
+    if origin is dict or tp is dict:
+        return "object"
+    if isinstance(tp, type) and issubclass(tp, BaseModel):
+        return _model_shape(tp)
+    return {str: "string", int: "integer", float: "number", bool: "true|false"}.get(tp, "any")
+
+
+# ---------- python -m app.brain.llm --check ----------
+
+
+async def check(llm: LLM | None = None) -> bool:
+    """One tiny request per configured provider (both Groq tiers), bypassing fallback."""
+    llm = llm or LLM()
+    s = llm.settings
+    targets: list[tuple[Provider, str]] = []
+    for provider in llm.providers():
+        models = [s.model_fast, s.model_smart] if provider == "groq" else [s.ollama_model]
+        targets += [(provider, m) for m in dict.fromkeys(models)]
+
+    ok = True
+    for provider, model in targets:
+        label = f"{provider:<7} {model:<28}"
+        if provider == "groq" and not s.groq_api_key:
+            print(f"{label} skipped: GROQ_API_KEY is empty in backend/.env")
+            ok = False
+            continue
+        start = time.monotonic()
+        try:
+            raw = await llm.client(provider).chat.completions.with_raw_response.create(
+                model=model,
+                messages=[{"role": "user", "content": "Reply with the single word: ok"}],
+                max_tokens=CHECK_MAX_TOKENS,
+                **llm._extras(provider, model),
+            )
+            response = raw.parse()
+        except _UNAVAILABLE_ERRORS as e:
+            where = s.ollama_base_url if provider == "ollama" else s.groq_base_url
+            print(f"{label} FAILED after {_elapsed_ms(start)} ms: {_describe(e)} ({where})")
+            ok = False
+            continue
+        usage = response.usage
+        tokens = f"{usage.prompt_tokens}/{usage.completion_tokens}" if usage else "n/a"
+        finish = response.choices[0].finish_reason if response.choices else None
+        print(f"{label} {_elapsed_ms(start):>6} ms  finish={finish}  tokens in/out={tokens}")
+        for name, value in sorted(raw.headers.items()):
+            if name.lower().startswith("x-ratelimit-"):
+                print(f"    {name.lower()}: {value}")
     return ok
 
 
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="python -m app.brain.llm", description="LLM provider tools (ARCHITECTURE.md §4.6)")
+    parser.add_argument("--check", action="store_true", help="send one tiny request to each configured provider")
+    args = parser.parse_args()
+    if not args.check:
+        parser.print_help()
+        return 2
+    return 0 if asyncio.run(check()) else 1
+
+
 if __name__ == "__main__":
-    sys.exit(0 if asyncio.run(check(get_settings())) else 1)
+    raise SystemExit(main())

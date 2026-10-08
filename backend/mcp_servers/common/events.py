@@ -1,7 +1,8 @@
-"""Report events to the backend: POST {type, data} to BACKEND_URL/internal/events (ARCHITECTURE.md §9).
+"""MCP servers report events to the backend over POST /internal/events (ARCHITECTURE.md §9).
 
-The MCP servers are separate processes, so this is how their events reach the event bus.
-A failed POST is logged and swallowed: the tool call that emitted the event still succeeds.
+The servers are separate processes, so they can't use the in-process bus in app.core.events.
+A failed post is logged and swallowed: the backend being down must never fail an MCP tool,
+because the database write the tool just made is the thing that matters.
 """
 
 import logging
@@ -9,28 +10,49 @@ from typing import Any
 
 import httpx
 
-from mcp_servers.common.results import jsonable
-from mcp_servers.common.settings import get_settings
+from app.core.config import get_settings
+from app.core.events import EventType
 
 log = logging.getLogger(__name__)
 
-TIMEOUT = httpx.Timeout(3.0, connect=1.0)
+POST_TIMEOUT_SECONDS = 3.0
+
+_client: httpx.AsyncClient | None = None
 
 
-async def publish(event_type: str, data: dict[str, Any], *, client: httpx.AsyncClient | None = None) -> bool:
-    """Return True when the backend accepted the event, False (with a warning) otherwise."""
+def _http() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=POST_TIMEOUT_SECONDS)
+    return _client
+
+
+async def close_client() -> None:
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
+
+async def publish(type: EventType, data: dict[str, Any]) -> bool:
+    """POST one §9 event to the backend. Returns whether it was accepted; never raises."""
     settings = get_settings()
     url = settings.backend_url.rstrip("/") + "/internal/events"
-    body = {"type": event_type, "data": jsonable(data)}
-    headers = {"X-Internal-Key": settings.internal_api_key}
     try:
-        if client is None:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as own_client:
-                response = await own_client.post(url, json=body, headers=headers)
-        else:
-            response = await client.post(url, json=body, headers=headers)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        log.warning("event %s not delivered to %s: %s", event_type, url, exc.__class__.__name__)
+        response = await _http().post(
+            url,
+            json={"type": type, "data": data},
+            headers={"X-Internal-Key": settings.internal_api_key},
+        )
+    except Exception as e:
+        log.warning("event %s not delivered to %s: %s: %s", type, url, type_name(e), e)
+        return False
+    if response.status_code >= 400:
+        # Never log the response body: a 401 here means the key is wrong, and bodies can echo headers.
+        log.warning("event %s rejected by %s: HTTP %d", type, url, response.status_code)
         return False
     return True
+
+
+def type_name(e: BaseException) -> str:
+    return type(e).__name__

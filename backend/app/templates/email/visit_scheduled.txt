@@ -1,0 +1,11 @@
+{{ company_name }}: your technician visit is booked
+Ticket {{ ticket_number }}
+
+Hi {{ customer_name or "there" }},
+
+{{ technician_first_name }} will come on {{ scheduled_date_display }} for the {{ service_name|lower }}{% if device %} on your {{ device.name }} (serial {{ device.serial_number }}){% endif %}.
+Address: {{ address_text }}
+
+They'll call you to agree the time.
+
+Need to change something? Reply on the chat you've been using, quoting ticket {{ ticket_number }}.

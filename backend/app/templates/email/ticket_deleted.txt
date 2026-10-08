@@ -1,0 +1,8 @@
+{{ company_name }}: your support request has been closed
+Ticket {{ ticket_number }}
+
+Hi {{ customer_name }},
+
+Ticket {{ ticket_number }} ({{ title }}){% if device %} for your {{ device }}{% if serial %} (serial {{ serial }}){% endif %}{% endif %} has been closed.
+
+If you still need help with it, message us{% if channel %} on {{ channel }}{% endif %} and we'll open a new one.

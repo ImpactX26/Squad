@@ -1,105 +1,97 @@
-"""Start every MCP server built so far, one process each (make mcp; ARCHITECTURE.md §3, §5).
+"""Start every MCP server that exists, one process each (ARCHITECTURE.md §3, §5).
 
-Run from backend/: uv run python -m mcp_servers.run_all
+    cd backend && uv run python -m mcp_servers.run_all
 
-Each server runs in its own process group, so a Windows Ctrl+C in this console reaches only
-run_all, which then stops each server with CTRL_BREAK_EVENT (SIGTERM elsewhere) and waits for it:
-the ports are released (§18.2). If a server exits on its own, the others are stopped and run_all
-exits with status 1, so systemd (Restart=always) brings the whole set back.
+Each server is its own process, so one crashing doesn't take the others down, and each gets
+its own fastembed instance only if it needs one. Ctrl+C stops all of them cleanly.
+
+On Windows a console Ctrl+C goes to the whole process group, which would race this script's
+own shutdown. The children are started in a new process group instead and are sent an explicit
+CTRL_BREAK_EVENT, so each one unwinds its own lifespan (pools closed, port released).
 """
 
-import importlib
 import signal
-import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-# Block 1. payments (:8105), dispatch (:8106) and inventory (:8107) join in Blocks 3 and 4.
-SERVERS = ("tickets", "catalog", "knowledge", "messaging")
+from mcp_servers import SERVER_NAMES, host_port_path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-HOST = "127.0.0.1"
-WINDOWS = sys.platform == "win32"
-START_TIMEOUT_SECONDS = 30
-STOP_TIMEOUT_SECONDS = 10
+STOP_GRACE_SECONDS = 10
+IS_WINDOWS = sys.platform == "win32"
 
 
-def port_of(name: str) -> int:
-    return importlib.import_module(f"mcp_servers.{name}_server").PORT
-
-
-def listening(port: int) -> bool:
-    try:
-        with socket.create_connection((HOST, port), timeout=0.5):
-            return True
-    except OSError:
-        return False
+def existing_servers() -> list[str]:
+    """The §5 servers whose module has been built; the rest are still to come."""
+    return [name for name in SERVER_NAMES if (BACKEND_DIR / "mcp_servers" / f"{name}_server.py").exists()]
 
 
 def start(name: str) -> subprocess.Popen:
-    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
-    return subprocess.Popen([sys.executable, "-m", f"mcp_servers.{name}_server"], cwd=BACKEND_DIR, **group)
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
+    return subprocess.Popen(
+        [sys.executable, "-m", f"mcp_servers.{name}_server"],
+        cwd=str(BACKEND_DIR),
+        creationflags=creationflags,
+        start_new_session=not IS_WINDOWS,
+    )
 
 
-def stop(proc: subprocess.Popen) -> None:
-    if proc.poll() is not None:
+def stop(name: str, process: subprocess.Popen) -> None:
+    if process.poll() is not None:
         return
-    proc.send_signal(signal.CTRL_BREAK_EVENT if WINDOWS else signal.SIGTERM)
     try:
-        proc.wait(timeout=STOP_TIMEOUT_SECONDS)
+        if IS_WINDOWS:
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            process.terminate()
+    except (OSError, ValueError):  # already gone
+        return
+    try:
+        process.wait(timeout=STOP_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-
-
-def _interrupt(signum, frame) -> None:
-    raise KeyboardInterrupt
+        print(f"  {name} did not stop in {STOP_GRACE_SECONDS}s; killing it", flush=True)
+        process.kill()
+        process.wait()
 
 
 def main() -> int:
-    # systemd stops with SIGTERM; Ctrl+Break on Windows is SIGBREAK. Both end like Ctrl+C.
-    signal.signal(signal.SIGTERM, _interrupt)
-    if WINDOWS:
-        signal.signal(signal.SIGBREAK, _interrupt)
-
-    ports = {name: port_of(name) for name in SERVERS}
-    busy = [f"{name} :{port}" for name, port in ports.items() if listening(port)]
-    if busy:
-        print(f"Already in use: {', '.join(busy)}. Is another run_all or server running?", file=sys.stderr)
+    names = existing_servers()
+    if not names:
+        print("No *_server.py files in mcp_servers/ yet.")
         return 1
 
-    procs: dict[str, subprocess.Popen] = {}
-    try:
-        for name in SERVERS:
-            procs[name] = start(name)
-        deadline = time.monotonic() + START_TIMEOUT_SECONDS
-        waiting = dict(ports)
-        while waiting:
-            for name, port in list(waiting.items()):
-                if listening(port):
-                    print(f"  {name:<10} http://{HOST}:{port}/mcp", flush=True)
-                    del waiting[name]
-                elif procs[name].poll() is not None or time.monotonic() > deadline:
-                    print(f"{name} did not start (exit code {procs[name].poll()})", file=sys.stderr)
-                    return 1
-            time.sleep(0.2)
-        print(f"All {len(SERVERS)} MCP servers are up. Ctrl+C stops them.", flush=True)
+    missing = [n for n in SERVER_NAMES if n not in names]
+    processes: dict[str, subprocess.Popen] = {}
+    for name in names:
+        host, port, path = host_port_path(name)
+        processes[name] = start(name)
+        print(f"  {name:10} http://{host}:{port}{path}  pid {processes[name].pid}", flush=True)
+    if missing:
+        print(f"  not built yet: {', '.join(missing)}", flush=True)
+    print(f"{len(processes)} MCP server(s) running. Ctrl+C to stop.", flush=True)
 
+    # Ctrl+C in this console also reaches the children on POSIX; on Windows it does not,
+    # because they are in their own process group. stop() handles both.
+    try:
         while True:
-            for name, proc in procs.items():
-                if proc.poll() is not None:
-                    print(f"{name} exited with code {proc.returncode}; stopping the others.", file=sys.stderr)
-                    return 1
+            for name, process in list(processes.items()):
+                if process.poll() is not None:
+                    print(f"  {name} exited with code {process.returncode}", flush=True)
+                    del processes[name]
+            if not processes:
+                print("Every server exited.", flush=True)
+                return 1
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("Stopping the MCP servers...", flush=True)
-        return 0
+        print("\nStopping...", flush=True)
     finally:
-        for proc in procs.values():
-            stop(proc)
+        for name, process in processes.items():
+            stop(name, process)
+        print("All MCP servers stopped.", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

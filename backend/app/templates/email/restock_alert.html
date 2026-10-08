@@ -1,0 +1,51 @@
+{#
+  To WAREHOUSE_ALERT_EMAIL: a part fell to its reorder threshold (ARCHITECTURE.md §7.8). Sent by the
+  booking chain (a reservation that crossed the threshold) or the job.completed chain in app/brain/workflows.py,
+  after inventory.create_restock_request. Data: sku, name,
+  warehouse_name, qty, on_hand, reserved, available, reorder_threshold, reason, restock_request_id.
+#}
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f5f5f7;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;
+                        font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
+            <tr>
+              <td style="padding:24px 28px 4px;">
+                <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;">{{ company_name }}</div>
+                <div style="padding-top:12px;">
+                  <span style="font-size:28px;font-weight:600;letter-spacing:-0.02em;vertical-align:middle;">Restock {{ sku }}</span>
+                  <span style="display:inline-block;margin-left:10px;padding:3px 12px;border-radius:999px;background:#ff9500;
+                               color:#ffffff;font-size:13px;font-weight:600;vertical-align:middle;">Low stock</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 16px;font-size:15px;line-height:1.5;color:#6e6e73;">{{ name }} &middot; {{ warehouse_name }}</td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                       style="font-size:15px;line-height:1.47;font-variant-numeric:tabular-nums;">
+                  <tr><td style="padding:8px 0;">On hand</td><td align="right" style="padding:8px 0;">{{ on_hand }}</td></tr>
+                  <tr><td style="padding:8px 0;border-top:1px solid #d2d2d7;">Reserved for booked jobs</td><td align="right" style="padding:8px 0;border-top:1px solid #d2d2d7;">{{ reserved }}</td></tr>
+                  <tr><td style="padding:8px 0;border-top:1px solid #d2d2d7;font-weight:600;">Available</td><td align="right" style="padding:8px 0;border-top:1px solid #d2d2d7;font-weight:600;">{{ available }}</td></tr>
+                  <tr><td style="padding:8px 0;border-top:1px solid #d2d2d7;">Reorder threshold</td><td align="right" style="padding:8px 0;border-top:1px solid #d2d2d7;">{{ reorder_threshold }}</td></tr>
+                  <tr><td style="padding:12px 0;border-top:1px solid #d2d2d7;font-weight:600;font-size:17px;">Please order</td><td align="right" style="padding:12px 0;border-top:1px solid #d2d2d7;font-weight:600;font-size:17px;">{{ qty }}</td></tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 28px 24px;border-top:1px solid #d2d2d7;">
+                <p style="margin:0;font-size:13px;line-height:1.38;color:#6e6e73;">{{ reason }}. Restock request {{ restock_request_id }}.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -1,0 +1,88 @@
+{#
+  To the technician: a new job (ARCHITECTURE.md §7.7). Sent by the booking chain in app/brain/workflows.py.
+  Data: technician_name, ticket_number, job_url, scheduled_date_display, service_name, customer {full_name,
+  phone, email}, address_text, maps_links [{label, url}], device {name, serial_number} or none, issue,
+  part {sku, name, warehouse_name} or none, tried [{step, result}], billing.
+#}
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f5f5f7;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;
+                        font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
+            <tr>
+              <td style="padding:24px 28px 4px;">
+                <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;">{{ company_name }}</div>
+                <div style="padding-top:12px;font-size:28px;font-weight:600;letter-spacing:-0.02em;">New job: {{ scheduled_date_display }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 16px;font-size:15px;line-height:1.5;color:#6e6e73;font-variant-numeric:tabular-nums;">
+                Hi {{ technician_name }}, {{ service_name|lower }} &middot; Ticket {{ ticket_number }} &middot; {{ billing }}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:15px;line-height:1.47;">
+                  <tr>
+                    <td valign="top" style="padding:12px 12px 12px 0;width:50%;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Customer</div>
+                      <div style="font-weight:600;">{{ customer.full_name or "" }}</div>
+                      {% if customer.phone %}<div><a href="tel:{{ customer.phone|replace(' ', '') }}" style="color:#0071e3;text-decoration:none;">{{ customer.phone }}</a></div>{% endif %}
+                      {% if customer.email %}<div>{{ customer.email }}</div>{% endif %}
+                    </td>
+                    <td valign="top" style="padding:12px 0;width:50%;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Address</div>
+                      <div>{{ address_text }}</div>
+                      <div style="padding-top:4px;">
+                        {% for link in maps_links %}<a href="{{ link.url }}" style="color:#0071e3;text-decoration:none;">{{ link.label }}</a>{% if not loop.last %} &middot; {% endif %}{% endfor %}
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:12px 0;border-top:1px solid #d2d2d7;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Device and issue</div>
+                      {% if device %}<div style="font-weight:600;">{{ device.name }} &middot; serial {{ device.serial_number }}</div>{% endif %}
+                      <div>{{ issue }}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:12px 0;border-top:1px solid #d2d2d7;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Part to carry</div>
+                      {% if part %}<div><span style="font-weight:600;">{{ part.sku }}</span> &middot; {{ part.name }}</div>
+                      <div style="color:#6e6e73;">Reserved at {{ part.warehouse_name or "the warehouse" }}</div>
+                      {% else %}<div>No part needed</div>{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:12px 0;border-top:1px solid #d2d2d7;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Already tried</div>
+                      {% for t in tried %}<div>{{ t.step }} <span style="color:#6e6e73;">({{ t.result }})</span></div>
+                      {% else %}<div>Nothing recorded yet</div>{% endfor %}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 24px;">
+                <a href="{{ job_url }}" style="display:inline-block;padding:12px 22px;border-radius:10px;background:#0071e3;
+                   color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">Open the job</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 28px 24px;border-top:1px solid #d2d2d7;">
+                <p style="margin:0;font-size:13px;line-height:1.38;color:#6e6e73;">
+                  The visit is booked for a date, not a time: phone the customer to agree the time.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

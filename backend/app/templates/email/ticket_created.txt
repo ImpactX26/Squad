@@ -1,0 +1,13 @@
+{{ company_name }}: we've received your support request
+Ticket {{ ticket_number }}
+
+Hello,
+
+We've raised ticket {{ ticket_number }}{% if device %} for your {{ device }}{% if serial %} (serial {{ serial }}){% endif %}{% endif %}.
+
+A support agent will review it and reply to you on {{ channel }}. Quote {{ ticket_number }} if you get in touch about it.
+{#
+  To the customer: their ticket was raised (ARCHITECTURE.md §7.1). Sent by intake, the only email it can send
+  (IntakeTools.send_ticket_confirmation). Data: ticket_number, device (the catalog's model name) or none,
+  serial or none, channel. No customer-written text goes in: the address was typed in a chat.
+#}

@@ -1,136 +1,238 @@
-"""The backend's MCP client (ARCHITECTURE.md §2, §4.3): every tool call to the servers goes through here.
+"""MCP client hub: connect, list_tools, call_tool (ARCHITECTURE.md §4.3 step 1, §12).
 
-Tools are named "<server>__<tool>" (tickets__create_ticket). Each call names the allowlist it is
-checked against, and a tool outside it is refused before anything is sent. Each call opens its
-own short session, so a server that was down is simply tried again on the next call (§17.2).
+The backend is the MCP client (§2). At startup the hub connects to every MCP_*_URL, calls
+list_tools, and registers each tool as `<server>__<tool>` in OpenAI function-tool format, which
+is what router.filter_tools and runtime.run_tool_loop consume. `call_tool` matches runtime's
+ToolCaller signature, so the hub plugs straight into the tool loop.
 
-Block 1 connects the four servers on 127.0.0.1:8101-8104 (§4.5); payments, dispatch and
-inventory join in Blocks 3 and 4.
+A server that is down never stops the API from starting: its failure is logged, it contributes
+no tools, and the hub retries discovery on the next call.
+
+Each call opens its own short-lived session. The servers run `stateless_http=True` (mcp_servers
+/__init__.py), so there is no session to keep warm, and a per-call session keeps every anyio
+cancel scope inside the task that created it — a session opened in the lifespan task and closed
+from a request task is the classic way this breaks. It also makes "reconnect on the next call"
+fall out for free.
 """
 
 import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Any
 
-from mcp import Client
-from mcp.server import MCPServer
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
-from app.brain.router import MODEL_FORBIDDEN_TOOLS
-from app.core.config import Settings, get_settings
+from app.brain.router import SERVERS
+from app.core.config import get_settings
 
 log = logging.getLogger(__name__)
 
-CALL_TIMEOUT_SECONDS = 20
+# <server>__<tool> (§4.3). Double underscore, so a tool name with one underscore stays readable.
+NAME_SEPARATOR = "__"
 
-Target = str | MCPServer  # a Streamable HTTP URL, or a server object in-process (tests)
+CALL_TIMEOUT_SECONDS = 30.0
+CONNECT_TIMEOUT_SECONDS = 10.0
+# A server that was down isn't retried on every single call.
+REDISCOVER_AFTER_SECONDS = 30.0
 
-
-class ToolNotAllowed(Exception):
-    """The caller's allowlist doesn't include this tool. Nothing was sent."""
-
-
-class MCPUnavailable(Exception):
-    """The server couldn't be reached or didn't answer in time."""
-
-
-@dataclass
-class ToolResult:
-    name: str
-    ok: bool
-    data: Any  # the tool's JSON result, or its {error, message, ...} refusal
-    ms: int
-
-    @property
-    def error(self) -> str | None:
-        return self.data.get("error") if not self.ok and isinstance(self.data, dict) else None
+# Read-only lookups whose answer is stable for a minute. Everything else always hits the server.
+CACHEABLE_TOOLS = frozenset({
+    "catalog__lookup_serial",
+    "catalog__lookup_model",
+    "catalog__get_service_price",
+    "knowledge__get_playbook",
+})
+CACHE_TTL_SECONDS = 60.0
+CACHE_MAX_ENTRIES = 512
 
 
-@dataclass
-class ToolSpec:
-    name: str  # "<server>__<tool>"
-    description: str
-    parameters: dict[str, Any] = field(default_factory=dict)
-
-    def openai(self) -> dict[str, Any]:
-        return {"type": "function", "function": {"name": self.name, "description": self.description,
-                                                 "parameters": self.parameters}}
+class McpToolError(RuntimeError):
+    """A tool ran and reported an error, or the server could not be reached."""
 
 
-class MCPHub:
-    def __init__(self, servers: dict[str, Target]) -> None:
-        self.servers = servers
-        self.tools: dict[str, ToolSpec] = {}
+def split_name(name: str) -> tuple[str, str]:
+    """`tickets__create_ticket` -> ("tickets", "create_ticket")."""
+    server, separator, tool = name.partition(NAME_SEPARATOR)
+    if not separator or not server or not tool:
+        raise McpToolError(f"tool name {name[:100]!r} is not <server>{NAME_SEPARATOR}<tool>")
+    return server, tool
 
-    async def refresh(self) -> dict[str, bool]:
-        """list_tools on every server; registers what answered. Returns which servers are up."""
-        results = await asyncio.gather(*(self._list(name) for name in self.servers))
-        up = {}
-        for name, specs in zip(self.servers, results):
-            up[name] = specs is not None
-            if specs is not None:
-                self.tools = {k: v for k, v in self.tools.items() if not k.startswith(f"{name}__")} | specs
-        return up
 
-    async def _list(self, server: str) -> dict[str, ToolSpec] | None:
+class McpHub:
+    """One hub for the whole app. `hub` below is the instance main.py's lifespan connects."""
+
+    def __init__(self) -> None:
+        self._urls: dict[str, str] = {}
+        self._tools: dict[str, list[dict[str, Any]]] = {}  # server -> OpenAI function tools
+        self._failed_at: dict[str, float] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._cache: dict[str, tuple[float, Any]] = {}
+
+    # ---------- discovery ----------
+
+    def _configured(self) -> dict[str, str]:
+        if not self._urls:
+            settings = get_settings()
+            self._urls = {name: getattr(settings, f"mcp_{name}_url") for name in SERVERS}
+        return self._urls
+
+    async def connect_all(self) -> dict[str, int]:
+        """Discover tools on every configured server. Returns {server: tool count}; never raises."""
+        names = list(self._configured())
+        results = await asyncio.gather(*(self._discover(name) for name in names), return_exceptions=True)
+        counts: dict[str, int] = {}
+        for name, result in zip(names, results):
+            counts[name] = 0 if isinstance(result, BaseException) else result
+        up = [f"{n}({c})" for n, c in counts.items() if c]
+        down = [n for n, c in counts.items() if not c]
+        log.info("mcp hub: %d tools from %s%s", sum(counts.values()), ", ".join(up) or "nothing",
+                 f"; unreachable: {', '.join(down)}" if down else "")
+        return counts
+
+    async def _discover(self, server: str) -> int:
+        """list_tools on one server and register them. Returns the count; 0 when it's unreachable."""
+        lock = self._locks.setdefault(server, asyncio.Lock())
+        async with lock:
+            url = self._configured()[server]
+            try:
+                async with asyncio.timeout(CONNECT_TIMEOUT_SECONDS):
+                    async with streamable_http_client(url) as (read, write):
+                        async with ClientSession(read, write) as session:
+                            await session.initialize()
+                            listed = (await session.list_tools()).tools
+            except Exception as e:
+                self._tools.pop(server, None)
+                self._failed_at[server] = time.monotonic()
+                log.warning("mcp hub: %s at %s is unreachable: %s", server, url, describe(e))
+                return 0
+            self._tools[server] = [_as_openai_tool(server, tool) for tool in listed]
+            self._failed_at.pop(server, None)
+            return len(self._tools[server])
+
+    async def _ensure(self, server: str) -> None:
+        """Rediscover a server that has no tools, at most every REDISCOVER_AFTER_SECONDS."""
+        if self._tools.get(server):
+            return
+        failed_at = self._failed_at.get(server)
+        if failed_at is not None and time.monotonic() - failed_at < REDISCOVER_AFTER_SECONDS:
+            return
+        await self._discover(server)
+
+    # ---------- the two methods everything else uses ----------
+
+    def tools(self, servers: list[str] | frozenset[str] | None = None) -> list[dict[str, Any]]:
+        """Registered tools in OpenAI function-tool format, for router.filter_tools (§4.3)."""
+        wanted = list(self._tools) if servers is None else [s for s in servers if s in self._tools]
+        return [tool for server in wanted for tool in self._tools.get(server, [])]
+
+    def tool_names(self) -> list[str]:
+        return sorted(tool["function"]["name"] for tool in self.tools())
+
+    async def call_tool(self, name: str, args: dict[str, Any]) -> Any:
+        """Run `<server>__<tool>` and return its result. Matches runtime.ToolCaller.
+
+        Returns the tool's structured JSON content (a dict), or its text when it returned none.
+        runtime._compact serialises and truncates it for the model; workflows get the object.
+        """
+        server, tool = split_name(name)
+        if server not in self._configured():
+            raise McpToolError(f"unknown MCP server {server!r}")
+
+        cache_key = _cache_key(name, args)
+        if cache_key is not None and (hit := self._cache_get(cache_key)) is not None:
+            return hit[1]
+
+        await self._ensure(server)
+        if not self._tools.get(server):
+            raise McpToolError(f"MCP server {server!r} is unreachable")
+
+        url = self._configured()[server]
         try:
-            async with asyncio.timeout(CALL_TIMEOUT_SECONDS), Client(self.servers[server]) as client:
-                listed = await client.list_tools()
-        except Exception as exc:  # unreachable: an ExceptionGroup around a connect error
-            log.warning("MCP server %s is down: %s", server, _reason(exc))
+            async with asyncio.timeout(CALL_TIMEOUT_SECONDS):
+                async with streamable_http_client(url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool(tool, args, read_timeout_seconds=CALL_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError as e:
+            raise McpToolError(f"{name} timed out after {CALL_TIMEOUT_SECONDS:.0f}s") from e
+        except Exception as e:
+            # The server may have gone away; make the next call rediscover it.
+            self._tools.pop(server, None)
+            self._failed_at[server] = time.monotonic()
+            raise McpToolError(f"{name} failed: {describe(e)}") from e
+
+        value = _result_value(result)
+        if getattr(result, "is_error", False):
+            raise McpToolError(f"{name} reported an error: {json.dumps(value, default=str)[:300]}")
+        if cache_key is not None:
+            self._cache_put(cache_key, value)
+        return value
+
+    # ---------- 60-second cache for read-only lookups ----------
+
+    def _cache_get(self, key: str) -> tuple[float, Any] | None:
+        entry = self._cache.get(key)
+        if entry is None:
             return None
-        return {f"{server}__{t.name}": ToolSpec(f"{server}__{t.name}", (t.description or "").strip(), t.input_schema)
-                for t in listed.tools}
+        if entry[0] < time.monotonic():
+            self._cache.pop(key, None)
+            return None
+        return entry
 
-    def openai_tools(self, allowed: frozenset[str]) -> list[dict[str, Any]]:
-        """The allowed tools in OpenAI function format for a model. MODEL_FORBIDDEN_TOOLS are never offered."""
-        return [spec.openai() for name, spec in sorted(self.tools.items())
-                if name in allowed and name not in MODEL_FORBIDDEN_TOOLS]
+    def _cache_put(self, key: str, value: Any) -> None:
+        if len(self._cache) >= CACHE_MAX_ENTRIES:
+            for stale in [k for k, (expires, _) in self._cache.items() if expires < time.monotonic()]:
+                self._cache.pop(stale, None)
+            if len(self._cache) >= CACHE_MAX_ENTRIES:
+                self._cache.pop(next(iter(self._cache)), None)
+        self._cache[key] = (time.monotonic() + CACHE_TTL_SECONDS, value)
 
-    async def call_tool(self, name: str, arguments: dict[str, Any], *, allowed: frozenset[str]) -> ToolResult:
-        if name not in allowed:
-            raise ToolNotAllowed(name)
-        server, _, tool = name.partition("__")
-        if server not in self.servers or not tool:
-            raise ToolNotAllowed(f"{name} (no such server)")
-        started = time.perf_counter()
-        try:
-            async with asyncio.timeout(CALL_TIMEOUT_SECONDS), Client(self.servers[server]) as client:
-                result = await client.call_tool(tool, arguments)
-        except Exception as exc:
-            raise MCPUnavailable(f"{server} unreachable while calling {tool}: {_reason(exc)}") from exc
-        text = "".join(getattr(part, "text", "") for part in result.content)
-        return ToolResult(name=name, ok=not result.is_error, data=_parse(text),
-                          ms=round((time.perf_counter() - started) * 1000))
+    def clear_cache(self) -> None:
+        self._cache.clear()
 
 
-def _parse(text: str) -> Any:
-    # A refusal reads "Error executing tool x: {...}": keep the JSON part (mcp_servers/common/results.py).
-    for candidate in (text, text[text.find("{"):] if "{" in text else ""):
-        try:
-            return json.loads(candidate)
-        except ValueError:
-            continue
-    return text
+def describe(e: BaseException) -> str:
+    """"ConnectError: All connection attempts failed" rather than anyio's bare ExceptionGroup wrapper."""
+    while isinstance(e, BaseExceptionGroup) and len(e.exceptions) == 1:
+        e = e.exceptions[0]
+    if isinstance(e, BaseExceptionGroup):
+        return "; ".join(describe(sub) for sub in e.exceptions[:3])
+    return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
-def _reason(exc: BaseException) -> str:
-    inner = getattr(exc, "exceptions", None)
-    return _reason(inner[0]) if inner else type(exc).__name__
+def _cache_key(name: str, args: dict[str, Any]) -> str | None:
+    if name not in CACHEABLE_TOOLS:
+        return None
+    return name + ":" + json.dumps(args, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def server_urls(settings: Settings) -> dict[str, Target]:
+def _as_openai_tool(server: str, tool: Any) -> dict[str, Any]:
+    """One MCP tool as `{"type": "function", "function": {...}}` (§4.3 step 1)."""
+    schema = tool.input_schema or {"type": "object", "properties": {}}
     return {
-        "tickets": settings.mcp_tickets_url,
-        "catalog": settings.mcp_catalog_url,
-        "knowledge": settings.mcp_knowledge_url,
-        "messaging": settings.mcp_messaging_url,
+        "type": "function",
+        "function": {
+            "name": f"{server}{NAME_SEPARATOR}{tool.name}",
+            "description": (tool.description or "").strip(),
+            "parameters": schema,
+        },
     }
 
 
-@lru_cache
-def get_hub() -> MCPHub:
-    return MCPHub(server_urls(get_settings()))
+def _result_value(result: Any) -> Any:
+    structured = getattr(result, "structured_content", None)
+    if structured is not None:
+        return structured
+    texts = [block.text for block in (getattr(result, "content", None) or []) if getattr(block, "text", None)]
+    if not texts:
+        return {}
+    joined = "\n".join(texts)
+    try:
+        return json.loads(joined)
+    except ValueError:
+        return joined
+
+
+hub = McpHub()

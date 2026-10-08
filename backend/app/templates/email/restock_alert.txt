@@ -1,0 +1,10 @@
+{{ company_name }}: restock {{ sku }} (low stock)
+{{ name }} at {{ warehouse_name }}
+
+On hand: {{ on_hand }}
+Reserved for booked jobs: {{ reserved }}
+Available: {{ available }}
+Reorder threshold: {{ reorder_threshold }}
+Please order: {{ qty }}
+
+{{ reason }}. Restock request {{ restock_request_id }}.

@@ -1,72 +1,116 @@
-"""messaging MCP server (:8104), ARCHITECTURE.md §5.4.
+"""messaging MCP server (ARCHITECTURE.md §5.4) — :8104.
 
-Block 1 tools: send_reply and notify_staff. send_email comes with the email templates.
+The single way the brain talks to customers. It never connects to Discord or Telegram: it
+writes a messages row and an outbox row, and the backend's channel dispatcher delivers it
+with retries, so bot connections stay in one process (§5.4, §6.1).
 
-messaging never talks to Discord, Telegram or Gmail itself. send_reply writes the reply and an
-outbox row; the backend's channel dispatcher delivers it on the conversation's own channel and
-records the outcome on that row (§5.4, §6.1). No tool here takes a channel, so a model can't
-choose where a reply goes.
-
-Run: uv run python -m mcp_servers.messaging_server
+The reply target is always the conversation's own channel, never chosen by a model — that is
+what guarantees "reply on the same platform" (§6.1).
 """
 
-import re
+import uuid
+from typing import Any
 
-from mcp.server import MCPServer
+from mcp.server.mcpserver import MCPServer
 
-from mcp_servers import serve
-from mcp_servers.common import events
-from mcp_servers.common.db import connection
-from mcp_servers.common.results import dumps, fail, parse_uuid
+from mcp_servers import run
+from mcp_servers.common import db, events
 
-PORT = 8104
+mcp = MCPServer(name="messaging", instructions=__doc__)
 
-STAFF_ROLES = ("agent", "technician", "warehouse", "admin")
-NOTIFICATION_TYPE = re.compile(r"[a-z][a-z0-9_]{0,39}")
-# The bell renders the link: a dashboard path or a web address, never javascript: or the like.
-SAFE_LINK = re.compile(r"(/|https?://)\S*")
-
-mcp = MCPServer("messaging", instructions="Reply to customers on their own channel; notify staff on the dashboard.")
+# What send_email may attach (§5.4), and the template each belongs to. Only the name and the
+# payment id go on the outbox; the email channel renders the file when it builds the mail, so no
+# PDF bytes are ever stored.
+EMAIL_ATTACHMENTS = {"receipt_pdf": "payment_confirmed"}
 
 
-@mcp.tool(structured_output=False)
-async def send_reply(conversation_id: str, text: str) -> str:
-    """Reply to a customer on their conversation's own channel. The reply is queued for delivery;
-    its outbox row records when it went out.
+@mcp.tool()
+async def send_reply(conversation_id: str, text: str) -> dict[str, Any]:
+    """Reply to the customer on their own channel (§5.4).
+
+    Writes the messages row and queues an outbox row; the dispatcher delivers it.
     """
-    conversation = parse_uuid(conversation_id, "conversation_id")
-    body = text.strip()
-    if not body:
-        raise fail("missing_text", "text must not be empty")
+    if not text.strip():
+        return {"ok": False, "error": "text is empty"}
+    conversation = await db.fetchrow(
+        "SELECT id, channel, external_thread_id, ticket_id FROM conversations WHERE id = $1", conversation_id)
+    if conversation is None:
+        return {"ok": False, "error": "conversation not found", "conversation_id": conversation_id}
 
-    async with connection() as conn, conn.transaction():
-        conv = await conn.fetchrow("SELECT id, channel, ticket_id FROM conversations WHERE id = $1", conversation)
-        if conv is None:
-            raise fail("not_found", "no conversation with that id", field="conversation_id")
-        message = await conn.fetchrow(
-            """
-            INSERT INTO messages (conversation_id, ticket_id, sender_type, channel, body)
-            VALUES ($1, $2, 'ai', $3, $4) RETURNING id, created_at
-            """,
-            conv["id"], conv["ticket_id"], conv["channel"], body,
-        )
-        # The dispatcher reads the channel and thread from the conversation, not from the payload.
-        outbox_id = await conn.fetchval(
-            "INSERT INTO outbox (conversation_id, message_id, payload) VALUES ($1, $2, $3) RETURNING id",
-            conv["id"], message["id"], {"kind": "reply", "text": body},
-        )
-        await conn.execute("UPDATE conversations SET last_message_at = now() WHERE id = $1", conv["id"])
-        if conv["ticket_id"] is not None:
-            await conn.execute("UPDATE tickets SET updated_at = now() WHERE id = $1", conv["ticket_id"])
-
-    if conv["ticket_id"] is not None:
-        await events.publish("ticket.updated", {"ticket_id": conv["ticket_id"], "reason": "reply_queued",
-                                                "message_id": message["id"], "channel": conv["channel"]})
-    return dumps({"message_id": message["id"], "outbox_id": outbox_id, "conversation_id": conv["id"],
-                  "channel": conv["channel"], "ticket_id": conv["ticket_id"], "status": "queued"})
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            message = await conn.fetchrow(
+                "INSERT INTO messages (conversation_id, ticket_id, sender_type, channel, body)"
+                " VALUES ($1,$2,'ai',$3,$4) RETURNING id AS message_id, created_at",
+                conversation_id, conversation["ticket_id"], conversation["channel"], text,
+            )
+            outbox = await conn.fetchrow(
+                "INSERT INTO outbox (conversation_id, message_id, payload) VALUES ($1,$2,$3)"
+                " RETURNING id AS outbox_id",
+                conversation_id, message["message_id"],
+                {"kind": "reply", "channel": conversation["channel"],
+                 "thread_id": conversation["external_thread_id"], "text": text},
+            )
+            await conn.execute("UPDATE conversations SET last_message_at = now() WHERE id = $1", conversation_id)
+    return {
+        "ok": True, "queued": True, "channel": conversation["channel"],
+        **db.row_to_dict(message), **db.row_to_dict(outbox),
+    }
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool()
+async def send_email(
+    to: str,
+    subject: str,
+    template: str,
+    data: dict[str, Any] | None = None,
+    ticket_id: str | None = None,
+    attachments: list[str] | None = None,
+) -> dict[str, Any]:
+    """Queue a transactional email: payment link, confirmation, visit scheduled, restock alert (§5.4).
+
+    Goes on the same outbox as channel replies, so it gets the dispatcher's retries. The outbox
+    row has no conversation_id, because an email address is not a channel conversation (§8.1).
+    `attachments` may only be ["receipt_pdf"], with the payment_confirmed template and the
+    payment's id in data.payment_id: the PDF receipt (§7.6).
+    """
+    if "@" not in to:
+        return {"ok": False, "error": "to is not an email address"}
+    refs, error = attachment_refs(attachments, template, data or {})
+    if error:
+        return {"ok": False, "error": error}
+    payload = {"kind": "email", "channel": "email", "to": to, "subject": subject,
+               "template": template, "data": data or {}, "ticket_id": ticket_id}
+    if refs:
+        payload["attachments"] = refs
+    row = await db.fetchrow(
+        "INSERT INTO outbox (conversation_id, message_id, payload) VALUES (NULL, NULL, $1)"
+        " RETURNING id AS outbox_id, created_at",
+        payload,
+    )
+    return {"ok": True, "queued": True, "to": to, "template": template,
+            "attachments": [ref["type"] for ref in refs], **db.row_to_dict(row)}
+
+
+def attachment_refs(
+    attachments: list[str] | None, template: str, data: dict[str, Any],
+) -> tuple[list[dict[str, str]], str | None]:
+    """([{type, payment_id}], None) for the outbox payload, or ([], the reason it's refused)."""
+    refs: list[dict[str, str]] = []
+    for name in dict.fromkeys(attachments or []):
+        if name not in EMAIL_ATTACHMENTS:
+            return [], f"unknown attachment {str(name)[:40]!r}; allowed: {', '.join(EMAIL_ATTACHMENTS)}"
+        if template != EMAIL_ATTACHMENTS[name]:
+            return [], f"{name} goes only with the {EMAIL_ATTACHMENTS[name]} template"
+        try:
+            payment_id = str(uuid.UUID(str(data.get("payment_id") or "")))
+        except ValueError:
+            return [], f"{name} needs the payment's id in data.payment_id"
+        refs.append({"type": name, "payment_id": payment_id})
+    return refs, None
+
+
+@mcp.tool()
 async def notify_staff(
     title: str,
     body: str | None = None,
@@ -74,48 +118,34 @@ async def notify_staff(
     user_id: str | None = None,
     role: str | None = None,
     type: str = "info",
-) -> str:
-    """Notify staff on the dashboard bell: one person by user_id, or everyone with a role
-    (agent, technician, warehouse, admin). type is a short label such as stock_low or job_rejected.
-    """
-    if bool(user_id) == bool(role):
-        raise fail("bad_arguments", "give exactly one of user_id or role")
-    if role is not None and role not in STAFF_ROLES:
-        raise fail("bad_role", f"role must be one of: {', '.join(STAFF_ROLES)}", value=role)
-    user = parse_uuid(user_id, "user_id") if user_id else None
-    title = title.strip()
-    if not title:
-        raise fail("missing_text", "title must not be empty")
-    if not NOTIFICATION_TYPE.fullmatch(type):
-        raise fail("bad_type", "type is a short lowercase label such as stock_low", value=type)
-    link = (link or "").strip() or None
-    if link is not None and not SAFE_LINK.fullmatch(link):
-        raise fail("bad_link", "link must be a dashboard path (/inventory) or an http(s) address", value=link)
-    body = (body or "").strip() or None
+) -> dict[str, Any]:
+    """Dashboard or technician notification (§5.4). Give user_id for one person, or role for everyone in it."""
+    if not user_id and not role:
+        return {"ok": False, "error": "give user_id or role"}
+    if user_id:
+        recipients = await db.fetch("SELECT id FROM staff_users WHERE id = $1", user_id)
+    else:
+        recipients = await db.fetch("SELECT id FROM staff_users WHERE role = $1", role)
+    if not recipients:
+        return {"ok": False, "error": "no matching staff user", "user_id": user_id, "role": role}
 
-    async with connection() as conn, conn.transaction():
-        if role is not None:
-            users = [r["id"] for r in await conn.fetch("SELECT id FROM staff_users WHERE role = $1 ORDER BY name", role)]
-        else:
-            if not await conn.fetchval("SELECT EXISTS (SELECT 1 FROM staff_users WHERE id = $1)", user):
-                raise fail("not_found", "no staff user with that id", field="user_id")
-            users = [user]
-        rows = await conn.fetch(
-            """
-            INSERT INTO notifications (user_id, type, title, body, link)
-            SELECT u, $2, $3, $4, $5 FROM unnest($1::uuid[]) AS u
-            RETURNING id, user_id, created_at
-            """,
-            users, type, title, body, link,
-        )
-
-    for r in rows:
-        await events.publish("notification.created", {"notification_id": r["id"], "user_id": r["user_id"],
-                                                      "type": type, "title": title, "body": body, "link": link,
-                                                      "created_at": r["created_at"]})
-    return dumps({"notified": len(rows), "notifications": [{"notification_id": r["id"], "user_id": r["user_id"]}
-                                                           for r in rows]})
+    created: list[str] = []
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            for person in recipients:
+                row = await conn.fetchrow(
+                    "INSERT INTO notifications (user_id, type, title, body, link)"
+                    " VALUES ($1,$2,$3,$4,$5) RETURNING id",
+                    person["id"], type, title, body, link,
+                )
+                created.append(str(row["id"]))
+    for notification_id, person in zip(created, recipients):
+        await events.publish("notification.created", {
+            "notification_id": notification_id, "user_id": str(person["id"]),
+            "type": type, "title": title, "link": link,
+        })
+    return {"ok": True, "notification_ids": created, "recipients": len(created)}
 
 
 if __name__ == "__main__":
-    serve(mcp, PORT)
+    run(mcp, "messaging")

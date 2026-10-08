@@ -1,0 +1,18 @@
+{{ company_name }}: receipt for invoice {{ invoice_number }} (PAID)
+Ticket: {{ ticket_number }}
+
+Paid: {{ total_display }} by UPI on {{ paid_display }}
+UTR: {{ utr or "" }}
+
+Billed to: {{ customer.full_name or "" }}
+{% if customer.email %}Email: {{ customer.email }}
+{% endif %}{% if customer.phone %}Phone: {{ customer.phone }}
+{% endif %}Service address: {% if service_address %}{{ service_address.text }}{% else %}to be confirmed{% endif %}
+{% if device %}Device: {{ device.name }}, serial {{ device.serial_number }}
+{% endif %}Problem: {{ problem_summary }}
+
+{% for item in line_items %}{{ item.label }}: {{ item.amount_display }}
+{% endfor %}Total paid: {{ total_display }}
+
+Thank you. We'll be in touch shortly to confirm your technician visit.
+{% if receipt_attached %}Your receipt is attached as a PDF.{% endif %}

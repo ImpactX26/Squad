@@ -1,0 +1,104 @@
+{#
+  The receipt: the same invoice, marked PAID, with the UTR and the date (ARCHITECTURE.md §7.6).
+  Sent by the payment.paid workflow (app/brain/workflows.py). Data: app/payments/invoice.py invoice_view().
+#}
+<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f5f5f7;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;
+                        font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
+            <tr>
+              <td style="padding:24px 28px 4px;">
+                <div style="font-size:15px;font-weight:600;letter-spacing:-0.01em;">{{ company_name }}</div>
+                <div style="padding-top:12px;">
+                  <span style="font-size:28px;font-weight:600;letter-spacing:-0.02em;vertical-align:middle;">Receipt</span>
+                  <span style="display:inline-block;margin-left:10px;padding:3px 12px;border-radius:999px;background:#34c759;
+                               color:#ffffff;font-size:13px;font-weight:600;vertical-align:middle;">PAID</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 16px;font-size:15px;line-height:1.5;color:#6e6e73;font-variant-numeric:tabular-nums;">
+                {{ invoice_number }} &middot; {{ invoice_date }} &middot; Ticket {{ ticket_number }}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                       style="font-size:15px;line-height:1.47;background:#f5f5f7;border-radius:10px;font-variant-numeric:tabular-nums;">
+                  <tr>
+                    <td style="padding:12px 16px;">
+                      <div style="font-weight:600;">{{ total_display }} paid by UPI</div>
+                      <div style="color:#6e6e73;">{{ paid_display }} &middot; UTR {{ utr or "" }}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:15px;line-height:1.47;">
+                  <tr>
+                    <td valign="top" style="padding:12px 12px 12px 0;width:50%;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Billed to</div>
+                      <div style="font-weight:600;">{{ customer.full_name or "" }}</div>
+                      {% if customer.email %}<div>{{ customer.email }}</div>{% endif %}
+                      {% if customer.phone %}<div>{{ customer.phone }}</div>{% endif %}
+                    </td>
+                    <td valign="top" style="padding:12px 0;width:50%;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Service address</div>
+                      <div>{% if service_address %}{{ service_address.text }}{% else %}To be confirmed{% endif %}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="2" style="padding:12px 0;border-top:1px solid #d2d2d7;">
+                      <div style="font-size:13px;color:#6e6e73;padding-bottom:4px;">Device and problem</div>
+                      {% if device %}<div style="font-weight:600;">{{ device.name }} &middot; serial {{ device.serial_number }}</div>{% endif %}
+                      <div>{{ problem_summary }}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 28px 8px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                       style="font-size:15px;line-height:1.47;font-variant-numeric:tabular-nums;border-top:1px solid #d2d2d7;">
+                  {% for item in line_items %}
+                    <tr>
+                      <td style="padding:10px 0;">{{ item.label }}</td>
+                      <td align="right" style="padding:10px 0;white-space:nowrap;">{{ item.amount_display }}</td>
+                    </tr>
+                  {% endfor %}
+                  <tr>
+                    <td style="padding:12px 0;border-top:1px solid #d2d2d7;font-weight:600;font-size:17px;">Total paid</td>
+                    <td align="right" style="padding:12px 0;border-top:1px solid #d2d2d7;font-weight:600;font-size:17px;white-space:nowrap;">{{ total_display }}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 28px 24px;font-size:15px;line-height:1.47;">
+                <p style="margin:0;">Thank you. We'll be in touch shortly to confirm your technician visit.</p>
+                {% if receipt_attached %}<p style="margin:12px 0 0;color:#6e6e73;">Your receipt is attached as a PDF.</p>{% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 28px 24px;border-top:1px solid #d2d2d7;">
+                <p style="margin:0;font-size:13px;line-height:1.38;color:#6e6e73;">
+                  Keep this receipt for your records. Questions? Reply on the chat you've been using, quoting ticket {{ ticket_number }}.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

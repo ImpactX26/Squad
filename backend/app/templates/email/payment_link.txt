@@ -1,0 +1,18 @@
+{{ company_name }}: invoice {{ invoice_number }}
+Date: {{ invoice_date }}
+Ticket: {{ ticket_number }}
+
+Billed to: {{ customer.full_name or "" }}
+{% if customer.email %}Email: {{ customer.email }}
+{% endif %}{% if customer.phone %}Phone: {{ customer.phone }}
+{% endif %}Service address: {% if service_address %}{{ service_address.text }}{% else %}to be confirmed{% endif %}
+{% if device %}Device: {{ device.name }}, serial {{ device.serial_number }}
+{% endif %}Problem: {{ problem_summary }}
+
+{% for item in line_items %}{{ item.label }}: {{ item.amount_display }}
+{% endfor %}Total: {{ total_display }}
+
+Pay by UPI: {{ pay_url }}
+Scan the QR code on that page with any UPI app, then enter the 12-digit UTR (UPI reference number) from your payment app on the same page.
+{% if upi_id %}Paying to {{ payee_name }} ({{ upi_id }}).
+{% endif %}This link expires on {{ expires_display }}.

@@ -1,0 +1,17 @@
+{{ company_name }}: new job on {{ scheduled_date_display }}
+Hi {{ technician_name }}, {{ service_name|lower }}, ticket {{ ticket_number }} ({{ billing }})
+
+Customer: {{ customer.full_name or "" }}
+{% if customer.phone %}Phone: {{ customer.phone }}
+{% endif %}Address: {{ address_text }}
+{% for link in maps_links %}{{ link.label }}: {{ link.url }}
+{% endfor %}
+{% if device %}Device: {{ device.name }}, serial {{ device.serial_number }}
+{% endif %}Issue: {{ issue }}
+Part to carry: {% if part %}{{ part.sku }} ({{ part.name }}), reserved at {{ part.warehouse_name or "the warehouse" }}{% else %}none{% endif %}
+Already tried:{% for t in tried %}
+- {{ t.step }} ({{ t.result }}){% else %} nothing recorded yet{% endfor %}
+
+Open the job: {{ job_url }}
+
+The visit is booked for a date, not a time: phone the customer to agree the time.

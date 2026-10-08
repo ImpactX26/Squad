@@ -1,105 +1,122 @@
-"""The async connection pool every MCP server shares (ARCHITECTURE.md §5)."""
+"""One asyncpg pool per MCP server process, built from DATABASE_URL (ARCHITECTURE.md §5).
 
-import asyncio
+The servers are separate processes from the FastAPI app, so they don't share app.core.db's
+SQLAlchemy engine. They do reuse its connect args, so the Supabase Session pooler works here
+too (asyncpg's prepared-statement cache has to be off against the pooler, §8).
+"""
+
 import json
-import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
-from urllib.parse import urlsplit
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from typing import Any
 
 import asyncpg
-from mcp.server.mcpserver.exceptions import ToolError
+from sqlalchemy.engine import make_url
 
-from mcp_servers.common.results import fail
-from mcp_servers.common.settings import get_settings
-
-log = logging.getLogger(__name__)
-
-# What a refused or exhausted connection raises: refused or timed out (OSError), or turned away by
-# the server or the Supabase pooler (a PostgresError such as EMAXCONNSESSION).
-UNREACHABLE = (OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
-# Inside a tool, only a lost connection is the database's fault; other errors are the tool's own.
-# (A transaction's rollback on a dropped connection raises InterfaceError: the connection is closed.)
-LOST = (OSError, asyncpg.PostgresConnectionError)
-
-# The dev project's Session pooler takes 15 clients in all, shared by every laptop's API and MCP
-# servers. Each server opens none until a tool needs one, keeps at most 2, and closes one left idle
-# for 30 s, so a quiet server gives its slots back.
-MAX_SIZE = 2
-IDLE_SECONDS = 30.0
+from app.core.config import get_settings
+from app.core.db import asyncpg_connect_args
 
 _pool: asyncpg.Pool | None = None
-_lock = asyncio.Lock()
 
 
-def dsn(database_url: str) -> str:
-    # asyncpg wants a plain postgresql:// URL, not SQLAlchemy's dialect form.
-    return database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+def dsn() -> str:
+    """DATABASE_URL as a plain libpq DSN (asyncpg doesn't take SQLAlchemy's +asyncpg scheme)."""
+    return make_url(get_settings().database_url).set(drivername="postgresql").render_as_string(hide_password=False)
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
-    # jsonb columns come back as Python objects, not strings.
-    await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+    # jsonb in and out as Python objects, so tools don't hand-serialise every payload.
+    for type_name in ("json", "jsonb"):
+        await conn.set_type_codec(type_name, encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
 
 async def get_pool() -> asyncpg.Pool:
-    """The shared pool, made on first use; it connects when a tool takes a connection (connection())."""
+    """The process-wide pool, created on first use."""
     global _pool
-    async with _lock:
-        if _pool is None:
-            url = dsn(get_settings().database_url)
-            # The Supabase Transaction pooler (port 6543) does not support prepared statements (§8).
-            kwargs = {"statement_cache_size": 0} if urlsplit(url).port == 6543 else {}
-            try:
-                _pool = await asyncpg.create_pool(url, min_size=0, max_size=MAX_SIZE,
-                                                  max_inactive_connection_lifetime=IDLE_SECONDS,
-                                                  init=_init_connection, **kwargs)
-            except UNREACHABLE as exc:
-                raise _unavailable(exc) from exc
+    if _pool is None:
+        url = get_settings().database_url
+        # Seven servers and the API share the Supabase Session pooler's 15 client slots, and a
+        # client holds its slot while idle. So each server keeps no connection when idle, at most
+        # two when busy (a third request waits here instead of failing at the pooler with
+        # EMAXCONNSESSION), and gives an idle one back after a minute.
+        _pool = await asyncpg.create_pool(
+            dsn(),
+            min_size=0,
+            max_size=2,
+            max_inactive_connection_lifetime=60,
+            command_timeout=20,
+            init=_init_connection,
+            **asyncpg_connect_args(url),
+        )
     return _pool
-
-
-def _unavailable(exc: BaseException) -> ToolError:
-    host = urlsplit(dsn(get_settings().database_url)).hostname
-    log.warning("database unreachable at %s: %s", host, type(exc).__name__)
-    return fail("database_unavailable", "the database is unreachable; try again shortly")
-
-
-def _closed(conn: asyncpg.Connection) -> bool:
-    try:
-        return conn.is_closed()
-    except asyncpg.InterfaceError:  # the pool already took back a connection that was terminated
-        return True
-
-
-@asynccontextmanager
-async def connection() -> AsyncIterator[asyncpg.Connection]:
-    """A pooled connection for one tool call.
-
-    A connection the pool can't open (the pooler full, the network down) or one lost during the
-    call is a `database_unavailable` tool error, never a bare "Error executing tool".
-    """
-    pool = await get_pool()
-    try:
-        conn = await pool.acquire()
-    except UNREACHABLE as exc:
-        raise _unavailable(exc) from exc
-    try:
-        yield conn
-    except ToolError:
-        raise
-    except Exception as exc:
-        if isinstance(exc, LOST) or _closed(conn):
-            raise _unavailable(exc) from exc
-        raise
-    finally:
-        with suppress(*UNREACHABLE):  # a broken connection is dropped by the pool, not given back
-            await pool.release(conn)
 
 
 async def close_pool() -> None:
     global _pool
-    async with _lock:
-        if _pool is not None:
-            await _pool.close()
-            _pool = None
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+
+
+@asynccontextmanager
+async def acquire() -> AsyncIterator[asyncpg.Connection]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        yield conn
+
+
+async def fetch(query: str, *args: Any) -> list[asyncpg.Record]:
+    async with acquire() as conn:
+        return await conn.fetch(query, *args)
+
+
+async def fetchrow(query: str, *args: Any) -> asyncpg.Record | None:
+    async with acquire() as conn:
+        return await conn.fetchrow(query, *args)
+
+
+async def fetchval(query: str, *args: Any) -> Any:
+    async with acquire() as conn:
+        return await conn.fetchval(query, *args)
+
+
+async def execute(query: str, *args: Any) -> str:
+    async with acquire() as conn:
+        return await conn.execute(query, *args)
+
+
+# ---------- helpers shared by the servers ----------
+
+
+def row_to_dict(row: asyncpg.Record | None) -> dict[str, Any] | None:
+    return None if row is None else {k: _plain(v) for k, v in row.items()}
+
+
+def rows_to_list(rows: Sequence[asyncpg.Record]) -> list[dict[str, Any]]:
+    return [{k: _plain(v) for k, v in row.items()} for row in rows]
+
+
+def _plain(value: Any) -> Any:
+    """UUIDs, dates, and Decimals as JSON-friendly values; tools return compact JSON (§5)."""
+    import datetime
+    import decimal
+    import uuid
+
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    return value
+
+
+def to_vector_literal(vector: Sequence[float]) -> str:
+    """pgvector input as a string literal, cast with ::vector in SQL.
+
+    Simpler than registering a type codec, and it keeps working with the pooler's
+    prepared-statement cache disabled.
+    """
+    return "[" + ",".join(f"{float(x):.6f}" for x in vector) + "]"

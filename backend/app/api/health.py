@@ -1,37 +1,25 @@
-"""GET /api/health: liveness + DB check, 503 when the DB is unreachable (ARCHITECTURE.md §10)."""
-
 import asyncio
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import DB_ERRORS, get_engine
+from app.core.db import get_session
 from app.schemas.health import HealthOut
 
 log = logging.getLogger(__name__)
-router = APIRouter()
-
-DB_CHECK_TIMEOUT_SECONDS = 5
+router = APIRouter(prefix="/api", tags=["health"])
 
 
-async def _ping(engine: AsyncEngine) -> None:
-    async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
-
-
-@router.get(
-    "/api/health",
-    response_model=HealthOut,
-    responses={503: {"model": HealthOut, "description": "The database is unreachable"}},
-)
-async def health(engine: AsyncEngine = Depends(get_engine)) -> HealthOut | JSONResponse:
+@router.get("/health", response_model=HealthOut)
+async def health(response: Response, session: Annotated[AsyncSession, Depends(get_session)]) -> HealthOut:
     try:
-        await asyncio.wait_for(_ping(engine), timeout=DB_CHECK_TIMEOUT_SECONDS)
-    except (*DB_ERRORS, TimeoutError) as exc:
-        log.warning("health: database unreachable: %s", type(exc).__name__)
-        body = HealthOut(status="error", db="unreachable")
-        return JSONResponse(status_code=503, content=body.model_dump())
+        async with asyncio.timeout(5):
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        log.exception("health check: database unavailable")  # details stay in the server log
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return HealthOut(status="degraded", db="unavailable")
     return HealthOut(status="ok", db="ok")
