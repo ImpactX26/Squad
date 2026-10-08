@@ -48,7 +48,7 @@ Work only inside the folders of the person you are working for. A change in anot
 
 ## Commits and pushes
 
-- Until the organisers provide the GitHub repo: commit locally only. No remote, no push, no pull. Every commit is still one meaningful, working step.
+- The repo is https://github.com/ImpactX26/Squad (`origin`, branch `main`). After each commit: tests pass → `git pull --rebase --autostash` → `git push`. Push at least every 45 minutes. Stage your own paths by name, never `git add -A`: several sessions may share one working copy.
 - One working step per commit: run it (server, test, endpoint), see it work, then commit.
 - Message format `type(scope): what changed`. Types `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `chore`; scopes `db`, `api`, `brain`, `mcp`, `channels`, `payments`, `web`, `deploy`. Example: `feat(mcp): add the tickets server (:8101)`. No "wip" or "final" messages, no padding commits.
 - Before each commit, scan the staged diff for secrets: `git diff --cached | grep -iE "gsk_|api_key|token|password"`. Before each push: tests pass, then `git pull --rebase`. Push at least every 45 minutes.
