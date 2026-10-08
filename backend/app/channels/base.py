@@ -9,8 +9,22 @@ chooses the channel.
 from dataclasses import dataclass
 from typing import Literal, Protocol, get_args
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 Channel = Literal["discord", "telegram", "email", "web"]
 CHANNELS: frozenset[str] = frozenset(get_args(Channel))
+
+
+async def limit_idle_transaction(session: AsyncSession) -> None:
+    """Have Postgres end this transaction if its client goes quiet inside it.
+
+    A client that dies or is cancelled mid-transaction can leave the Supabase pooler holding the
+    transaction open, with its locks: rows the dispatcher would skip forever, a TRUNCATE (make
+    seed, reset-demo) that waits until it times out. The channel layer's transactions take
+    milliseconds, so 15 seconds idle means the client is gone.
+    """
+    await session.execute(text("SET LOCAL idle_in_transaction_session_timeout = '15s'"))
 
 
 class ChannelAdapter(Protocol):

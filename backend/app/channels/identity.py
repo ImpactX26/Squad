@@ -19,7 +19,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.channels.base import CHANNELS, InboundMessage
+from app.channels.base import CHANNELS, InboundMessage, limit_idle_transaction
 from app.core.db import get_sessionmaker
 from app.core.events import publish
 
@@ -119,6 +119,7 @@ async def _conversation(session: AsyncSession, customer_id: uuid.UUID, channel: 
 
 
 async def _resolve(session: AsyncSession, inbound: InboundMessage) -> Resolved:
+    await limit_idle_transaction(session)
     customer_id, new_customer = await _customer_for(
         session, inbound.channel, inbound.external_user_id, inbound.display_name, _email_of(inbound)
     )
@@ -191,9 +192,11 @@ async def set_context(conversation_id: uuid.UUID, context: dict[str, Any], sessi
     )
     if session is None:
         async with get_sessionmaker()() as own:
+            await limit_idle_transaction(own)
             updated = await own.scalar(statement, {"context": context, "id": conversation_id})
             await own.commit()
     else:
+        await limit_idle_transaction(session)
         updated = await session.scalar(statement, {"context": context, "id": conversation_id})
         await session.commit()
     if updated is None:

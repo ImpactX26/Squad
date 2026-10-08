@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import auth, health, internal, tickets, ws
+from app.channels.lifespan import channels_lifespan
 from app.core.config import Settings, get_settings
 from app.core.db import DB_ERRORS
 from app.core.logging import install_token_redaction
@@ -24,7 +25,7 @@ async def database_unavailable(request: Request, exc: Exception) -> JSONResponse
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     install_token_redaction()
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=channels_lifespan)  # P2: channel adapters + outbox dispatcher
     app.state.settings = settings  # read by routes through app.api.deps.get_app_settings
     app.add_middleware(
         CORSMiddleware,
