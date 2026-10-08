@@ -7,6 +7,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { rolesFor } from "@/components/shell/nav";
 import { NotificationsProvider } from "@/components/shell/notifications";
+import { StaffEventsProvider } from "@/components/shell/staff-events";
 import { TopBar } from "@/components/shell/top-bar";
 import { EmptyState, LoadingState } from "@/components/states";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function StaffShell({ children }: { children: ReactNode }) {
 
   return (
     <NotificationsProvider>
+      <StaffEventsProvider token={session.access_token} staffId={session.staff.id}>
       <div className="flex min-h-dvh flex-col">
         <TopBar staff={session.staff} />
         {refused ? (
@@ -54,6 +56,7 @@ export function StaffShell({ children }: { children: ReactNode }) {
           children
         )}
       </div>
+      </StaffEventsProvider>
     </NotificationsProvider>
   );
 }

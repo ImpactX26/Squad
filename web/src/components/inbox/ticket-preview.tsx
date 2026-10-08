@@ -3,13 +3,12 @@
 import { AlertTriangle, ChevronLeft, MessagesSquare, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { useConversation } from "@/components/inbox/data";
+import { useConversation, type ConversationMessage } from "@/components/inbox/data";
 import { EmptyState } from "@/components/states";
 import { ChannelBadge, ChannelGlyph } from "@/components/ticket/channel";
 import { PriorityChip, StatusChip } from "@/components/ticket/chips";
 import type { Schemas } from "@/lib/api";
 import { fullTime, timeAgo } from "@/lib/format";
-import type { MockMessage } from "@/mocks/inbox";
 import { cn } from "@/lib/utils";
 
 type TicketRow = Schemas["TicketRow"];
@@ -133,9 +132,9 @@ function Conversation({ ticket, now }: { ticket: TicketRow; now: number }) {
   );
 }
 
-const SENDER: Record<MockMessage["sender_type"], string> = { customer: "Customer", ai: "AI", agent: "Agent" };
+const SENDER: Record<ConversationMessage["sender_type"], string> = { customer: "Customer", ai: "AI", agent: "Agent" };
 
-function Bubble({ message, now }: { message: MockMessage; now: number }) {
+function Bubble({ message, now }: { message: ConversationMessage; now: number }) {
   const fromCustomer = message.sender_type === "customer";
   return (
     <li className={cn("flex flex-col", fromCustomer ? "items-start" : "items-end")}>

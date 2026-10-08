@@ -26,7 +26,7 @@ export function Inbox() {
   const [mobilePreview, setMobilePreview] = useState(false);
 
   const view = ALL_VIEWS.find((v) => v.id === viewId) ?? VIEWS[0];
-  const { state, reload } = useInboxTickets(view.query, me);
+  const { state, reload, live } = useInboxTickets(view.query);
   const tickets = useMemo(() => (state.status === "ready" ? state.tickets : []), [state]);
   // The picked ticket, or the first one: the preview is never empty while the list isn't.
   const selected = tickets.find((t) => t.id === picked) ?? tickets[0] ?? null;
@@ -55,11 +55,19 @@ export function Inbox() {
         <div className="px-4 pt-4 pb-2">
           <div className="flex items-baseline justify-between gap-3">
             <h1 className="text-title-2 font-semibold">{view.label}</h1>
-            {state.status === "ready" && (
-              <span className="text-footnote text-ink-secondary tabular-nums">
-                {state.total} ticket{state.total === 1 ? "" : "s"}
+            <span className="flex items-center gap-2 text-footnote text-ink-secondary tabular-nums">
+              {state.status === "ready" &&
+                (state.total > state.tickets.length
+                  ? `${state.tickets.length} of ${state.total}`
+                  : `${state.total} ticket${state.total === 1 ? "" : "s"}`)}
+              <span
+                title={live === "live" ? "Live: new tickets appear on their own" : "Reconnecting to live updates"}
+                className="inline-flex items-center gap-1"
+              >
+                <span aria-hidden="true" className={cn("size-1.5 rounded-full", live === "live" ? "bg-success" : "bg-warning")} />
+                {live === "live" ? "Live" : "Reconnecting"}
               </span>
-            )}
+            </span>
           </div>
           <ViewChips current={view.id} onChoose={chooseView} />
         </div>
