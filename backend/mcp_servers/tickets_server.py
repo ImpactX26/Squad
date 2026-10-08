@@ -64,7 +64,8 @@ async def create_ticket(
     """Create a ticket for a customer's issue and return its ticket_number.
 
     product_id is null when the device is not verified. flags and priority are optional;
-    unknown values are rejected and nothing is created.
+    unknown values are rejected and nothing is created. With conversation_id, the conversation and
+    its messages not yet on a ticket are linked to this one.
     """
     _check(category, CATEGORIES, "category")
     _check(source_channel, CHANNELS, "source_channel")
@@ -80,6 +81,7 @@ async def create_ticket(
     product = parse_uuid(product_id, "product_id") if product_id else None
     conversation = parse_uuid(conversation_id, "conversation_id") if conversation_id else None
 
+    messages_attached = 0
     pool = await get_pool()
     async with pool.acquire() as conn, conn.transaction():
         try:
@@ -105,6 +107,13 @@ async def create_ticket(
             if linked != "UPDATE 1":
                 # Raising inside the transaction rolls the ticket back: nothing is created.
                 raise fail("not_found", "no conversation with that id for this customer", field="conversation_id")
+            # The messages that led here (the customer's first words, the serial asked for) are stored
+            # before intake decides their ticket (§6.3): this is it. Messages already on a ticket stay.
+            attached = await conn.execute(
+                "UPDATE messages SET ticket_id = $1 WHERE conversation_id = $2 AND ticket_id IS NULL",
+                row["id"], conversation,
+            )
+            messages_attached = int(attached.split()[-1])
         await conn.execute(
             "INSERT INTO ticket_events (ticket_id, type, payload, actor) VALUES ($1, 'created', $2, 'ai')",
             row["id"],
@@ -117,6 +126,7 @@ async def create_ticket(
         "status": row["status"],
         "priority": row["priority"],
         "flags": row["flags"],
+        "messages_attached": messages_attached,
     }
     await events.publish(
         "ticket.created", {**result, "customer_id": customer, "source_channel": source_channel, "title": title}

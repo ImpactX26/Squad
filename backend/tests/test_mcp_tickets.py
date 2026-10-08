@@ -44,6 +44,31 @@ async def test_create_ticket(rows, published, pool):
     assert published[0][0] == "ticket.created" and published[0][1]["ticket_number"] == out["ticket_number"]
 
 
+async def test_create_ticket_attaches_the_conversations_earlier_messages(rows, published, pool):
+    conversation = uuid.UUID(rows["conversation_id"])
+
+    async def say(sender, body):
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO messages (conversation_id, sender_type, channel, body) "
+                               "VALUES ($1, $2, 'telegram', $3)", conversation, sender, body)
+
+    # Intake's run up to the ticket: the problem, the serial asked for, the serial (§7.1).
+    await say("customer", "My laptop won't charge")
+    await say("ai", "What's the serial number?")
+    await say("customer", rows["serial"])
+    async with Client(mcp) as client:
+        first = await create(client, rows)
+        await say("customer", "The screen flickers too")
+        second = await create(client, rows, title="Screen flickers")
+        unlinked = await create(client, rows, conversation_id=None)
+    async with pool.acquire() as conn:
+        on = {r["body"]: str(r["ticket_id"]) for r in await conn.fetch(
+            "SELECT body, ticket_id FROM messages WHERE conversation_id = $1", conversation)}
+    assert (first["messages_attached"], second["messages_attached"], unlinked["messages_attached"]) == (3, 1, 0)
+    assert on == {"My laptop won't charge": first["ticket_id"], "What's the serial number?": first["ticket_id"],
+                  rows["serial"]: first["ticket_id"], "The screen flickers too": second["ticket_id"]}
+
+
 async def test_create_ticket_defaults_and_unverified_product(rows, published):
     async with Client(mcp) as client:
         out = await create(client, rows, product_id=None, conversation_id=None, flags=["unverified_product"])
