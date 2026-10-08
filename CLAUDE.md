@@ -28,7 +28,7 @@ Work only inside the folders of the person you are working for. A change in anot
 ## Safety rules (enforced in code, never only in prompts)
 
 - All model calls go through `app/brain/llm.py`, `decide.py` and `router.py` (§4.6). Never add the `anthropic` package or any paid API. Free tiers only: Groq, optional Jev, optional Ollama.
-- Tests never call a real model provider. Use `tests/llm_fakes.py` and `httpx.MockTransport`.
+- Tests never call a real model provider. Use `tests/llm_fakes.py` and the provider's MockTransport (httpx2 in §18.3).
 - Customer-facing intake never reaches payments, dispatch or inventory tools (§4.1). `INTAKE_TOOLS` is checked before the hub is called.
 - Decisions never authorize payment, dispatch, refunds or stock changes. Only staff actions and `payment.paid` do, and the only automatic path to `payment.paid` is a verified bank-alert match (`app/payments/upi_verifier.py`, §7.6).
 - Amounts are computed in code from the catalog (§5.5); no tool takes an amount argument. Tools in `router.MODEL_FORBIDDEN_TOOLS` are never offered to a model, whatever the role or command.
