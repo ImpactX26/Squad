@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, health, internal, tickets, ws
+from app.api import auth, dev, health, internal, tickets, ws
 from app.channels import web_chat
 from app.channels.lifespan import channels_lifespan
 from app.core.config import Settings, get_settings
@@ -42,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tickets.router)
     app.include_router(ws.router)
     app.include_router(internal.router)
+    app.include_router(dev.router)  # the stage backups, development only (§10)
     app.include_router(web_chat.router)  # P2: POST /api/chat/session, WS /ws/chat/{session_id}
     return app
 

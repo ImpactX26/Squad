@@ -95,6 +95,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dev/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate
+         * @description Inject a fake inbound message on any channel (a backup when a platform is down on stage).
+         */
+        post: operations["simulate_api_dev_simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dev/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels
+         * @description Which channel adapters are connected in this process, and where the others' replies go.
+         */
+        get: operations["channels_api_dev_channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/session": {
         parameters: {
             query?: never;
@@ -135,6 +175,18 @@ export interface components {
             session_id: string;
             /** Name */
             name: string;
+        };
+        /**
+         * DevChannels
+         * @description Which channel adapters this process runs (§15 checklist).
+         */
+        DevChannels: {
+            /** Connected */
+            connected: ("discord" | "telegram" | "email" | "web")[];
+            /** Enabled */
+            enabled: ("discord" | "telegram" | "email" | "web")[];
+            /** Simulated */
+            simulated: ("discord" | "telegram" | "email" | "web")[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -196,6 +248,128 @@ export interface components {
             color: string | null;
             /** Category */
             category: string;
+        };
+        /**
+         * SimulateIn
+         * @description A fake inbound message, handled as if the channel's adapter had received it.
+         */
+        SimulateIn: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "discord" | "telegram" | "email" | "web";
+            /** Text */
+            text: string;
+            /**
+             * External User Id
+             * @description The sender's account on the channel (Telegram or Discord user id, email address, web session id). Leave it out for a new simulated customer; send back the one a response gave to go on with that conversation. A real chat id reaches that chat when its adapter runs here.
+             */
+            external_user_id?: string | null;
+            /**
+             * External Thread Id
+             * @description The conversation's thread; external_user_id when left out.
+             */
+            external_thread_id?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /**
+             * Email
+             * @description web: the pre-chat form's email, which links the customer. email: the sender's address when external_user_id is left out.
+             */
+            email?: string | null;
+            /**
+             * Subject
+             * @description email only
+             */
+            subject?: string | null;
+        };
+        /** SimulateOut */
+        SimulateOut: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "discord" | "telegram" | "email" | "web";
+            /** External User Id */
+            external_user_id: string;
+            /** External Thread Id */
+            external_thread_id: string;
+            /**
+             * Delivery
+             * @enum {string}
+             */
+            delivery: "adapter" | "simulated" | "none";
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+            /** Awaiting */
+            awaiting: string | null;
+            ticket: components["schemas"]["SimulatedTicket"] | null;
+            /** Replies */
+            replies: components["schemas"]["SimulatedReply"][];
+            /** Intake Error */
+            intake_error: string | null;
+        };
+        /**
+         * SimulatedReply
+         * @description A reply intake queued for the simulated message.
+         */
+        SimulatedReply: {
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+            /** Text */
+            text: string;
+            /** Status */
+            status: ("pending" | "sent" | "failed") | null;
+            /** Simulated */
+            simulated: boolean;
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** SimulatedTicket */
+        SimulatedTicket: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed";
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "medium" | "high" | "urgent";
+            /** Flags */
+            flags: string[];
         };
         /**
          * StaffEvent
@@ -552,6 +726,85 @@ export interface operations {
             };
             /** @description INTERNAL_API_KEY is not set */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    simulate_api_dev_simulate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulateOut"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not in development */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    channels_api_dev_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevChannels"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not in development */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
