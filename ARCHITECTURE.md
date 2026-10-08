@@ -1393,7 +1393,16 @@ MCP_INVENTORY_URL=http://127.0.0.1:8107/mcp
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
 NEXT_PUBLIC_COMPANY_NAME="Aurora Devices"
+# The other channels, linked from /support (§11.2). The dev bots on laptops, the prod bots on the server (§13.4).
+# Telegram bot username, without the @
+NEXT_PUBLIC_TELEGRAM_BOT=
+# Discord server invite, https://discord.gg/...
+NEXT_PUBLIC_DISCORD_INVITE=
+# The support Gmail customers can write to (EMAIL_ADDRESS in backend/.env)
+NEXT_PUBLIC_SUPPORT_EMAIL=
 ```
+
+An empty channel variable leaves that channel on `/support` without a link.
 
 `NEXT_PUBLIC_API_URL` is also where the web server proxies `/api/pay/*` (`web/next.config.ts`, §7.6); the server fetches it itself, so `localhost` there becomes `127.0.0.1` (§4.5).
 
