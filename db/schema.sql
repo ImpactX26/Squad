@@ -244,7 +244,7 @@ CREATE TABLE payments (
   service_code        TEXT NOT NULL,
   amount              NUMERIC(10,2) NOT NULL,          -- computed in code (§7.6), never taken from a model or a customer
   currency            TEXT NOT NULL,
-  line_items          JSONB NOT NULL,                  -- [{"kind":"part","label":"Aurora 14 battery 70Wh (BAT-AX14)","amount":"5.40"},{"kind":"labour",...}]
+  line_items          JSONB NOT NULL,                  -- [{"kind":"part","label":"Aurora 14 battery 70Wh (BAT-AX14)","amount":"5400.00"},{"kind":"labour",...}]
   status              TEXT NOT NULL DEFAULT 'pending' CHECK (status IN
                       ('pending','verifying','paid','failed','expired','cancelled','refunded')),
   provider            TEXT NOT NULL DEFAULT 'upi_utr',

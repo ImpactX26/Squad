@@ -1,19 +1,18 @@
-# ServiceMesh — Architecture
+# Companion for Company — Architecture (working name)
 
-AI-assisted, omnichannel after-sales service platform for a laptop / PC / headphones company ("Aurora Devices" in the demo), powered by seven custom MCP servers.
+AI-assisted, omnichannel after-sales service platform for a laptop / PC / headphones company, powered by multiple custom MCP servers.
 
 Customers reach support from **Discord, Telegram, Email, or the website chat**. The AI "brain" understands each message, identifies the exact product by serial number, raises or updates a ticket, and always replies on the channel the customer used. Service-center agents work from one dashboard where AI helps them diagnose, reply, search, and run automations with slash commands. Payment, technician dispatch, inventory, and restock alerts run automatically through MCP tools.
 
-> **Status of this doc:** v2, the design for the 24-hour build. Nothing here is code yet: every part is built during the event, in the order of §14, and deployed as in §17. Payments (§7.6) are UPI QR + UTR, verified against the bank's forwarded credit SMS. §18 lists the traps found while prototyping this design, so nobody loses an hour to them twice.
+> **Status of this doc:** v1. Payments (§7.6) are UPI QR + UTR, verified against the bank's forwarded credit SMS. Everything is buildable as written.
 
 ---
 
 ## 0. How to use this document
 
-- This file sits at the repo root as `ARCHITECTURE.md`, next to `CLAUDE.md` (the rules every Claude Code session follows). Every session reads `CLAUDE.md`, then the sections its task names, then §14 to see which block it is in.
-- Names in this doc (tables, tools, events, env vars, routes, folders) are the **contract**. If someone changes one, they update this file in the same commit.
-- §14 says **when** each part is built. A section describes the finished feature; a session in an earlier block builds only the slice §14 gives it and leaves the rest for its block.
-- Sections: 1 scope → 2 decisions → 3 system → 4 brain → 5 MCP servers → 6 channels → 7 flows → 8 database → 9 events → 10 API → 11 frontend → 12 repo → 13 env & keys → 14 build plan → 15 demo safety → 16 open items → 17 deployment → 18 known traps.
+- Keep this file at the repo root as `ARCHITECTURE.md`. Add a short `CLAUDE.md` that says: "Read ARCHITECTURE.md before writing code. Follow its schema, names, and folder structure exactly." Every Claude session then starts with the same context.
+- Names in this doc (tables, tools, events, env vars, routes) are the **contract**. If someone changes one, they update this file in the same commit.
+- Sections: 1 scope → 2 decisions → 3 system → 4 brain → 5 MCP servers → 6 channels → 7 flows → 8 database → 9 events → 10 API → 11 frontend → 12 repo → 13 env & keys → 14 build plan → 15 demo safety → 16 open items.
 
 ---
 
@@ -25,15 +24,10 @@ Customers reach support from **Discord, Telegram, Email, or the website chat**. 
 - AI intake: understands the issue, classifies hardware vs software, asks for the serial number when missing, creates a ticket.
 - Duplicate detection: a repeat complaint about the same problem bumps the existing ticket's priority instead of creating a new ticket.
 - Replies always go back on the same channel the customer used.
-- Service-provider (SP) dashboard: Apple-style ticket inbox, unified cross-channel timeline, AI summary, suggested diagnostics ("what worked / what didn't"), AI-polished replies, natural-language search, suggested action buttons, built-in slash commands, copilot chat.
+- Service-provider (SP) dashboard: Apple-style ticket inbox, unified cross-channel timeline, AI summary, suggested diagnostics ("what worked / what didn't"), AI-polished replies, natural-language search, suggested action buttons, built-in and custom slash commands, copilot chat.
 - `/payments` automation: collect details → payment link → payment confirmed → technician dispatched → customer notified in chat and by email.
 - Technician portal: assigned jobs, address, part to replace, status updates.
 - Inventory: stock check, reserve on payment, consume on job completion, automatic low-stock restock request and email to the company.
-- Deployed on one public HTTPS host from hour 2:30 onward (§17), so pay links open on a phone and every jury demo runs on the live URL.
-
-**Stretch (only when a block finishes early; §14.5 has the cut order)**
-
-- Custom slash commands and their editor (`/commands`), the `/inventory` page, the admin payments page (route `/payments`, §11.2), `/diagnose-send`, a technician rejecting a job, the PDF receipt attachment, copilot "Save as PDF", Jev decisions.
 
 **Out of scope for the hackathon (roadmap)**
 
@@ -47,16 +41,15 @@ Customers reach support from **Discord, Telegram, Email, or the website chat**. 
 | Area | Decision | Why |
 |---|---|---|
 | Backend | **Python 3.12 + FastAPI** (async), Pydantic v2 | Official MCP Python SDK, OpenAI SDK, discord.py, python-telegram-bot all native. Team knows Python. |
-| Frontend | **Next.js 16 (App Router) + React 19 + TypeScript + Tailwind v4 + shadcn/ui** | Fast to build a premium UI, strong typing. Versions known to work together are in §18.3. |
+| Frontend | **Next.js (latest stable, App Router) + TypeScript + Tailwind v4 + shadcn/ui** | Fast to build a premium UI, strong typing. |
 | Type safety across the stack | FastAPI OpenAPI → `openapi-typescript` generates frontend types | Backend and frontend can't silently drift. Prevents broken integrations between teammates. |
-| Database | **PostgreSQL 16 + pgvector** on two Supabase free projects: **dev** (all laptops share it) and **prod** (only the server uses it). Local Docker is the fallback. | Relational data + vector search + full-text search in one DB. Supabase means no Docker on the 8GB laptop. Two projects mean a `make seed` on a laptop never wipes the demo. |
-| Hosting | **One Linux VM** (Azure for Students, or Oracle Cloud Always Free) running everything behind **Caddy** on one HTTPS hostname (§17) | The bots, IMAP polling and the UPI verifier need an always-on process with open mail ports, which free app hosts block. One hostname keeps WebSockets, SSE and pay links simple. |
+| Database | **PostgreSQL 16 + pgvector** (Supabase free project, or local Docker as fallback) | Relational data + vector search + full-text search in one DB. Supabase means no Docker on the 8GB laptop and one shared DB for the team. |
 | ORM / access | SQLAlchemy 2.0 async + asyncpg; schema in `db/schema.sql` | Plain SQL schema is quickest to review and reset. |
 | LLM | **Free tiers only.** **Groq** (OpenAI-compatible) for text and tool loops: `MODEL_FAST` (`qwen/qwen3.8-27b`) for fast/frequent calls, `MODEL_SMART` (`openai/gpt-oss-20b`) for tool loops. **Jev** (TypeSafe's decision model, through a free gateway) for typed decisions, optional and off by default. **Ollama** (`qwen2.5:7b`) on the 16GB laptop as the fallback. See §4.6. | No API budget, so nothing calls a paid API. Groq is fast enough for live demo replies; Ollama keeps replies flowing when Groq rate-limits. |
 | Embeddings | **fastembed** with `BAAI/bge-small-en-v1.5` (384-dim, local ONNX, CPU) | Free, fast, no extra key, ~130MB download. |
 | MCP | 7 custom MCP servers built with the official Python SDK (`MCPServer`, the class formerly called FastMCP), **Streamable HTTP** on localhost ports 8101–8107 | Each server is independent, testable with MCP Inspector, and can also be plugged into Claude Desktop. |
 | MCP client | The backend is the MCP client and runs the tool-use loop itself | Hosted providers can't reach localhost MCP servers. Running the client in the backend keeps everything local. |
-| Realtime | FastAPI WebSockets (`/ws/staff`, `/ws/chat/{session}`) + in-process event bus | Simple, and enough for one server process (a single uvicorn worker: the bus lives in memory). |
+| Realtime | FastAPI WebSockets (`/ws/staff`, `/ws/chat/{session}`) + in-process event bus | Simple and enough for one demo host. |
 | Auth | JWT (PyJWT) + bcrypt, seeded staff users with roles | No third-party auth setup. |
 | Email | Gmail IMAP (poll) + SMTP with an app password | Works from localhost, no OAuth consent screen. |
 | Payment | Custom **payments MCP** + **UPI QR and UTR**: the customer pays the company's UPI ID, submits the 12-digit UTR, and the backend matches it against the bank's credit SMS, forwarded by a phone into the project Gmail (§7.6) | No gateway, fees, or merchant onboarding; the method comes from the team's open-source UPI gateway, rebuilt on our backend, MCP tools, and Postgres. |
@@ -116,20 +109,18 @@ flowchart LR
   EB --> API
 ```
 
-### Processes
+### Processes on the demo machine
 
-The same three processes run on a laptop (in three terminals) and on the server (as three systemd services, §17).
+| Process | Port | Command | RAM (approx.) |
+|---|---|---|---|
+| Next.js dev server | 3000 | `pnpm dev` | 400–700 MB |
+| FastAPI + channel bots + event bus | 8000 | `uv run uvicorn app.main:app --port 8000` (single worker) | 250–400 MB (incl. embedding model) |
+| MCP servers (7) | 8101–8107 | `uv run python -m mcp_servers.run_all` | 7 × ~50 MB |
+| PostgreSQL | 5432 | Supabase (remote) or Docker `pgvector/pgvector:pg16` | 0 or ~150 MB |
 
-| Process | Port | Laptop command | Server service | RAM (approx.) |
-|---|---|---|---|---|
-| Next.js | 3000 | `pnpm dev` | `servicemesh-web` (`pnpm start` after `pnpm build`) | 400–700 MB |
-| FastAPI + channel bots + event bus + UPI verifier | 8000 | `uv run uvicorn app.main:app --port 8000` (single worker) | `servicemesh-api` (same, `--host 127.0.0.1`) | 250–400 MB (incl. embedding model) |
-| MCP servers (7) | 8101–8107 | `uv run python -m mcp_servers.run_all` | `servicemesh-mcp` | 7 × ~50 MB |
-| PostgreSQL | 5432 | Supabase dev project | Supabase prod project | 0 |
+Fits comfortably on the 16GB machine. The 8GB machine can run everything with Supabase instead of Docker.
 
-Fits on the 8GB laptop and on a 4GB VM.
-
-**Rule: one bot token, one machine.** Two machines with the same bot token both answer on Discord and conflict on Telegram (HTTP 409), and two processes polling one Gmail inbox steal each other's mail. So there are two sets (§13.4): the **prod** bots and prod Gmail run only on the server; the **dev** bots and dev Gmail run only on the laptop of whoever is building channels (P2). Everyone else sets `ENABLE_DISCORD=false`, `ENABLE_TELEGRAM=false`, `ENABLE_EMAIL=false` and uses `POST /api/dev/simulate`.
+**Rule:** only one machine (the "demo host") runs the Discord and Telegram bots at a time. Two machines with the same bot token both answer on Discord and conflict on Telegram (HTTP 409). Other teammates set `ENABLE_DISCORD=false`, `ENABLE_TELEGRAM=false`, `ENABLE_EMAIL=false`.
 
 ---
 
@@ -150,6 +141,8 @@ Customer text is untrusted. A free agent with every tool could be talked into "r
 
 The intake allowlist is otherwise read-only on `catalog`, with one exception: `catalog.link_product_to_customer`, which registers ownership on first contact (§6.3). It is a **fixed pipeline step, never a tool the model can choose** — it runs only when `lookup_serial` reports the unit has no owner, and a unit registered to someone else is left alone and the ticket flagged `ownership_mismatch`. Intake's allowlist lives in `app/brain/intake.py` as `INTAKE_TOOLS`, a frozenset checked before the hub is called and intersected with `ROLE_SERVERS["intake"]`.
 
+`messaging.send_email` is **not** in `INTAKE_TOOLS`. The one email intake sends is the "ticket raised" confirmation (§7.1), through `IntakeTools.send_ticket_confirmation`, which fixes the template (`ticket_created`), the subject and the data (ticket number, the catalog's device name and serial, the channel) in code. The customer's text decides only the address, and no word they wrote goes into the mail, because the address was typed in a chat. One per new ticket.
+
 ### 4.2 Why post-payment automation is a deterministic workflow
 
 "Payment confirmed → reserve part → assign technician → notify technician → notify customer (chat + email) → update dashboard" must work every single time in the demo. It runs as a fixed chain of MCP tool calls triggered by the `payment.paid` event: the receipt (§7.6 step 6), then the booking (§7.7): part reserved, technician found and booked, both of them emailed, the customer told on their channel. A free warranty repair runs the same booking as soon as the customer's details are in, and the job's status changes (`job.status_changed`, `job.completed`) run the completion and cancellation chains (§7.8). Nothing is manual, it's still fully MCP-driven, and it can't be derailed by a model choosing differently. Every call is logged to `ai_runs` and shown live in the dashboard's Agent Activity panel.
@@ -160,7 +153,7 @@ The intake allowlist is otherwise read-only on `catalog`, with one exception: `c
 2. For a request, `router.pick_servers(text, role)` picks the servers it needs; slash commands skip this and use their `allowed_tools`. `router.filter_tools` keeps only those servers' tools (always inside the role's allowlist, and never a tool in `MODEL_FORBIDDEN_TOOLS`, §5.5) and `router.compact_tools` trims them. Build the system message (role prompt + ticket context).
 3. `runtime.run_tool_loop` calls `llm.complete(tier="smart", tools=...)`. While the reply has `tool_calls` (`finish_reason == "tool_calls"`): execute every call through the MCP hub (concurrently when the model returns several), append `{"role": "tool", "tool_call_id": ..., "content": <compact JSON>}`, and call again. Cap at `AI_MAX_TOOL_ITERATIONS` (default 6). A tool name that isn't in `tools` is rejected, never executed.
 4. Publish `agent.tool_called` for each tool call so the dashboard animates it live, and write one `ai_runs` row per run: `model = "<provider>:<model>"`, tokens, `tool_calls` (`[{tool, ok, ms}]`), latency, error. Logging is fire-and-forget; a DB error never fails the request.
-5. Stream the final text to the dashboard (SSE, `llm.stream_text`) for a fast feel. The copilot (`app/api/copilot.py`) streams each tool call as it happens and then the loop's own final answer; `llm.stream_text` runs only when the loop stopped at `AI_MAX_TOOL_ITERATIONS` without one, so a question costs no second model call just to be streamed. General questions have read-only aggregate tools: `tickets.count_tickets` ("how many tickets…", in total, open, by status / issue / channel), `inventory.list_stock` (the whole warehouse, a part type, what is running low) and `dispatch.list_technicians`. A list of records is answered as a Markdown table that names people and devices (customer, model and serial), never a bare id, and open and resolved tickets go in separate tables by each row's own `open` value; `/copilot` renders it (§11.1). The copilot is never silent: an answer that comes back empty twice ends with a short fallback answer, and `LLMUnavailable` sends the §15-style fallback text as a `delta` before the `error` event. When the router picks `inventory` it also offers `catalog`, because a stock question often names a device or model, whose parts the catalog lists (a part's SKU goes straight to `inventory.check_stock`).
+5. Stream the final text to the dashboard (SSE, `llm.stream_text`) for a fast feel. The copilot (`app/api/copilot.py`) streams each tool call as it happens and then the loop's own final answer; `llm.stream_text` runs only when the loop stopped at `AI_MAX_TOOL_ITERATIONS` without one, so a question costs no second model call just to be streamed. General questions have read-only aggregate tools: `tickets.count_tickets` ("how many tickets…", in total, open, by status / issue / channel), `inventory.list_stock` (the whole warehouse, a part type, what is running low) and `dispatch.list_technicians`. A list of records is answered as a Markdown table that names people and devices (customer, model and serial), never a bare id, and open and resolved tickets go in separate tables by each row's own `open` value; Any Questions renders it (§11.1). The copilot is never silent: an answer that comes back empty twice ends with a short fallback answer, and `LLMUnavailable` sends the §15-style fallback text as a `delta` before the `error` event. When the router picks `inventory` it also offers `catalog`, because a stock question often names a device or model, whose parts the catalog lists (a part's SKU goes straight to `inventory.check_stock`).
 
 ### 4.4 Structured extraction (intake)
 
@@ -235,7 +228,7 @@ All servers live in `backend/mcp_servers/`, share `db.py` (async connection pool
 | `find_similar_tickets(customer_id, product_id, text, limit=3)` | Open tickets for same customer/product ranked by cosine similarity. |
 | `add_followup(ticket_id, message_id, channel)` | Duplicate handling: link message, `duplicate_count += 1`, raise priority, `ticket.followup` event. |
 | `add_message(ticket_id, conversation_id, sender_type, body, body_original?)` | Append to timeline. |
-| `update_status(ticket_id, status, note?)` | Status change + event. |
+| `update_status(ticket_id, status, note?, customer_told?)` | Status change + `ticket.updated` (with `status`, `note`, `customer_told`). `customer_told` (default false): the caller already sent the customer its own closing chat message (`/close`, a completed job), so the resolved notification (§7.9) sends only the email. |
 | `get_ticket(ticket_id or ticket_number)` | Ticket + product + customer + recent timeline. |
 | `search_tickets(query, filters)` | Hybrid search: filters + full-text + vector. A status a model writes that isn't in §8.1 is never matched as zero tickets: `"open"` means `open_only`, and any other unknown status is dropped and said back (`ignored_values`), as unknown filter keys are (`ignored_filters`). A query containing a serial (`decide.extract_serial`) returns that device's tickets, newest first (`ranking: "serial"`; an unknown serial is no tickets). Each result row is brief, so a list fits one tool result (§4.5): number, title, status, `open` (true unless resolved or closed), priority, issue type, channel, dates, `customer_name`, `device` (model name) and `serial_number`, plus the ranking fields; the description, AI summary and internal ids stay in `get_ticket`. |
 | `count_tickets(filters?, group_by?)` | Read-only counts for the copilot: `total`, `open`, `resolved_or_closed` for the same filters as `search_tickets`, and with `group_by` (`status`, `priority`, `issue_type`, `category` or `source_channel`, a fixed list; anything else is `bad_group_by`) a `groups` list where every row has its `count` and its `open` count. |
@@ -267,14 +260,14 @@ All servers live in `backend/mcp_servers/`, share `db.py` (async connection pool
 | Tool | Purpose |
 |---|---|
 | `send_reply(conversation_id, text)` | Routes to the conversation's own channel. The single way the brain talks to customers. |
-| `send_email(to, subject, template, data, ticket_id?, attachments?)` | Transactional email (payment link, confirmation, visit scheduled). `attachments` is an allowlist of one, `["receipt_pdf"]`, only with the `payment_confirmed` template and the payment's id in `data.payment_id`; anything else is refused. The outbox payload carries `attachments: [{type, payment_id}]`, never the PDF's bytes (§7.6 step 6). |
+| `send_email(to, subject, template, data, ticket_id?, attachments?)` | Transactional email (payment link, confirmation, visit scheduled, job assigned, restock alert, ticket raised). `attachments` is an allowlist of one, `["receipt_pdf"]`, only with the `payment_confirmed` template and the payment's id in `data.payment_id`; anything else is refused. The outbox payload carries `attachments: [{type, payment_id}]`, never the PDF's bytes (§7.6 step 6). |
 | `notify_staff(user_id or role, title, body, link)` | Dashboard / technician notification. |
 
 `messaging` doesn't talk to Discord or Telegram directly. It writes to the `outbox` table, and the backend's channel dispatcher delivers it (retries included). That keeps bot connections in one process.
 
 Whether a reply went out is read back from its `outbox` row, never from "did my own `deliver_pending()` call send it" — the loop ticks every second and often gets there first, and the agent still has to be told it was delivered (`dispatcher.outcome_of`).
 
-The dispatcher runs one tick at a time. It commits the `attempts` bump to release the row lock before the send (holding a database connection across a network call would be worse), which leaves the row `pending` while it is being delivered; the loop and the request paths both call it, so without that one-at-a-time guarantee a reply would be claimed twice and the customer would get it twice. The request paths pass the conversation they just handled, so a customer never waits on somebody else's queue; the loop drains everything this process can deliver and does the retries. A process claims only replies on a channel whose adapter is connected in it: laptops share the dev database, so a reply on a channel switched off on one laptop waits for the process that runs that channel, and the development sink takes only the threads `POST /api/dev/simulate` wrote to.
+The dispatcher runs one tick at a time. It commits the `attempts` bump to release the row lock before the send (holding a database connection across a network call would be worse), which leaves the row `pending` while it is being delivered; the loop and the request paths both call it, so without that one-at-a-time guarantee a reply would be claimed twice and the customer would get it twice. The request paths pass the conversation they just handled, so a customer never waits on somebody else's queue; the loop drains everything and does the retries.
 
 ### 5.5 `payments` (:8105) — see §7.6
 
@@ -356,7 +349,7 @@ Outbound path: `messaging.send_reply(conversation_id)` → `outbox` row → disp
 
 | Channel | Library | Connection | Thread key | Notes |
 |---|---|---|---|---|
-| Discord | `discord.py` | Gateway websocket, started as an asyncio task in FastAPI lifespan | DM channel id; in a server, one Discord thread per ticket in `#support` | Enable **Message Content Intent** in the Developer Portal. Use `async with channel.typing()`. |
+| Discord | `discord.py` | Gateway websocket, started as an asyncio task in FastAPI lifespan | DM: the DM channel id. In `#support` itself: `<channel id>:<user id>`, one conversation per person, and the reply @mentions them in the channel (only them: `allowed_mentions`). In a thread under `#support`: the thread id, and replies stay in it. The bot never opens a thread | Enable **Message Content Intent** in the Developer Portal. Bot permissions: View Channels, Send Messages, Send Messages in Threads, Read Message History. A bot @mention at the start of a message is dropped before intake. Use `async with channel.typing()`. |
 | Telegram | `python-telegram-bot` | Long polling inside the same event loop: `await app.initialize(); await app.start(); await app.updater.start_polling()` (don't use `run_polling()`, it blocks the loop) | `chat_id` | `send_chat_action("typing")`. |
 | Email | `imap-tools` (run in thread) + `aiosmtplib` | Poll INBOX for UNSEEN every `EMAIL_POLL_SECONDS`, **except** bank alerts (below) | Root `Message-ID` via `In-Reply-To`/`References`; ticket number `[SR-2026-00042]` in subject as backup | Strip quoted history with `email-reply-parser`. Reply with `In-Reply-To` + `References` so it stays in the same Gmail thread. HTML templates with Jinja2: `reply.html` for replies; a `messaging.send_email` mail renders its own `<template>.html` + `.txt` with its data and keeps its subject. |
 
@@ -368,8 +361,8 @@ Outbound path: `messaging.send_reply(conversation_id)` → `outbox` row → disp
 ### 6.3 Identity across channels
 
 - `customer_identities (channel, external_user_id)` maps each platform account to one customer.
-- Email and web give an email address immediately. Discord/Telegram customers get linked when they share an email (e.g. during `/payments`) or when their serial is already registered to a customer. The linked customer's tickets then show one unified timeline across all channels.
-- Linking by serial is one-way and narrow. Only a **placeholder** customer is folded into the owner: no email, no tickets, and nothing but the one channel account on it (`identity.is_anonymous_customer`). A customer who already has an email or any history is never merged, so knowing somebody's serial can't take over their record — that case is flagged `ownership_mismatch` instead.
+- Email and web give an email address immediately. Discord/Telegram customers get linked when they share an email (e.g. during `/payments`) or when they quote a serial registered to a customer **and** give that customer's email (§7.1). The linked customer's tickets then show one unified timeline across all channels.
+- Linking by serial is one-way and narrow. Only a **placeholder** customer is folded into the owner: no email, no tickets, and nothing but the one channel account on it (`identity.is_anonymous_customer`), and only when the email it gives matches the owner's (`identity.customer_email`, compared ignoring case). The serial alone never links anyone: a placeholder quoting someone else's serial is asked for its email first, and a different email (or none) keeps the ticket, the email and the confirmation on the person who wrote, flagged `ownership_mismatch`. A customer who already has an email or any history is never merged either; that case is flagged `ownership_mismatch` too. (Linking on the serial alone once merged a Discord user into another customer and sent their confirmation to that customer's address.)
 - If a serial is registered to a different customer, the ticket is still created but flagged `ownership_mismatch` for the agent.
 - The channel layer (`channels/identity.py`) owns the inbound `messages` row and `conversations.context`, the intake state machine's slot-filling state (§7.1). There is no §5 tool for either, and the brain reaches the database only through the hub (§4.1). A stored inbound message starts with `ticket_id` null: which ticket it belongs to is decided after intake runs, by the new ticket or by §7.2's `add_followup(message_id)`.
 
@@ -385,19 +378,27 @@ customer message
   → conversation.context.awaiting set?  ── yes → slot-filling handler (serial, payment details, diagnostic feedback)
   → extract_serial + decide.classify_intake (+ complete_json on MODEL_FAST when needed, §4.4) → {intent, category, issue_type, serial?, model?}
   → intent is new_issue and no serial?
-       → ask for serial (include "find it on the sticker under the laptop, or run `wmic bios get serialnumber` on Windows")
+       → ask for serial (include "find it on the sticker under the laptop, or run `wmic bios get serialnumber` on Windows"),
+         and for the email address in the same message when the customer has none on file (Discord, Telegram)
        → context.awaiting = "serial_number"; stop
   → catalog.lookup_serial
        not found → ask again once; after 2 misses create ticket flagged unverified_product
   → tickets.find_similar_tickets(customer, product, text)
        match → §7.2 duplicate flow; stop
+  → still no email (none on file, none typed)?
+       → ask for it, context.awaiting = "email" (the device kept in context.pending); after 2 replies without one,
+         the ticket is raised anyway, with no confirmation
   → tickets.create_ticket
   → knowledge.get_playbook → MODEL_FAST writes ticket summary + first diagnostic plan (stored in diagnostic_steps)
-  → messaging.send_reply: ticket number, what happens next, 1–2 safe self-help tips for software issues only
+  → messaging.send_reply: ticket number, what happens next, 1–2 safe self-help tips for software issues only,
+    and "I've also emailed a confirmation to k***@example.com" (masked)
+  → the "ticket raised" email, ticket_created.html, to the customer (§4.1); not on the email channel, where the reply is that email
   → events: ticket.created → dashboard updates live
 ```
 
-If the customer gives everything in one message ("My Aurora 14, serial AX14-7F3K92, battery won't charge"), the ticket is created on that first message with no questions asked.
+If the customer gives everything in one message ("My Aurora 14, serial AX14-7F3K92, battery won't charge", plus an email address when none is on file), the ticket is created on that first message with no questions asked.
+
+**The customer's email** is read from their words by code (`intake.extract_email`: a regex, then `email-validator`), never by a model, in whichever order it and the serial arrive. Asked only when the customer has none on file: the web widget's pre-chat form and the email channel give one up front, so those chats go exactly as before. It is asked after the serial is looked up: a serial registered to someone else is only linked to its owner when this email matches the owner's (§6.3), otherwise the ticket and the confirmation stay with the person who wrote. The confirmation goes to the address on file when there is one: a chat message never changes a customer's email (§6.3). Otherwise to the typed one, which is saved to the customer only when they have none and no other customer has it.
 
 **The `diagnostic_feedback` slot** (opened by `/diagnose-send`, §7.5), like `payment_details`: `context.diagnostic_request = {ticket_id, ticket_number, step_ids in order, steps (the texts sent), requested_by, requested_at}`.
 - One `MODEL_FAST` `complete_json` (`prompts/diagnostic_feedback_extract.md`) reads the reply as `{steps [{step_number, result, note}], problem_fixed}`. Code (`intake.feedback_results`) keeps only step numbers from the request, only `worked` / `failed` / `skipped`, the first mention of each step, and a note only when the customer wrote those words (cut to 200 characters). Anything not mentioned stays pending; a model can invent nothing.
@@ -542,7 +543,7 @@ sequenceDiagram
 - `finish_payment_details` saves the service address (an identical one is reused; it becomes the default; a maps link the customer pasted is kept on it) and the customer's name and phone. Their email is filled in only when the record has none: changing an existing email from a chat message would hand the account to whoever wrote it (§6.3). The invoice then goes to the email on file, and the customer is told which address (masked).
 - `payments.create_payment_request` computes the amount (§5.5). Then `send_reply` on the customer's channel: `{FRONTEND_URL}/pay/{token}`, how to pay, and the expiry. Then `send_email` with `payment_link.html`: invoice number, date, ticket number, problem summary (the ticket's title; the AI summary is written for agents and stays off customer documents), device and serial, customer name, email, phone, service address, line items, total, link expiry.
 - On any failure the customer still gets an answer ("an agent will send your payment link here shortly"), the agent who ran `/payments` gets a notification with the reason, and the slot closes.
-- Links point at `FRONTEND_URL`. On the server that is the public hostname (§17), so a link opens on any phone. On a laptop it is localhost; to test a phone against a laptop, run a tunnel to the web server's port 3000 and set `FRONTEND_URL` to the tunnel's URL: the web server proxies `/api/pay/*` to the backend (`web/next.config.ts`), so one tunnel serves the page and its API. The pay page polls and never uses SSE, so even a Cloudflare quick tunnel works for it.
+- Links point at `FRONTEND_URL`, so on the demo machine they open on localhost. To open one on a phone, run a tunnel to the web server's port 3000 and set `FRONTEND_URL` to the tunnel's URL (README): the web server proxies `/api/pay/*` to the backend (`web/next.config.ts`), so one tunnel serves the page and its API.
 
 **4. Paying, and the UTR** (`app/api/pay.py`, public)
 
@@ -564,7 +565,7 @@ sequenceDiagram
   - **Is it a credit?** It must contain a credit statement (credited / received / deposited); none at all is `debit_alert` (or `not_a_credit_alert`). Failed, declined, reversed, pending, "will be credited" and collect requests are refused wherever they appear (`failed_or_reversed`, `not_completed`). The verb nearest the amount decides the direction: "debited for Rs 6,199.00; JOHN credited" is `debit_alert`, while a "sent", "paid" or "Dr" elsewhere in the text changes nothing.
   - **The amount**: a (Rs|INR|₹) amount, never a balance (`Bal`, `Avl Bal`, `Available balance`, `Balance after transaction`, `Bal is`); of several, the one nearest the credit statement; a two-decimal number is the fallback.
   - **The UTR**: the 12 digits next to a UTR / RRN / Ref / UPI keyword (a UPI path such as `UPI/P2A/<utr>/NAME` counts). Other 12-digit numbers (an account number, a phone number) don't matter, but two *different* tagged numbers are `ambiguous_utr`, never a guess: an admin verifies that payment by hand. With no tagged number, one standalone 12-digit number is the fallback.
-  - Unit tests (`tests/test_upi_parser.py`) must cover credit formats from at least five Indian banks, debits and non-credits, and whole forwarded mails (a forwarder footer, a balance and "Dr" after the credit, two 12-digit numbers, HTML only, the forwarder's header lines, quoted-printable), plus every SMS in `tests/fixtures/bank_sms/` (its README says how to add a real one).
+  - Unit tests (`tests/test_upi_parser.py`) cover 11 credit formats across 10 banks, debits and non-credits, and whole forwarded mails (a forwarder footer, a balance and "Dr" after the credit, two 12-digit numbers, HTML only, the forwarder's header lines, quoted-printable), plus every SMS in `tests/fixtures/bank_sms/` (its README says how to add a real one).
 - **Storing it:** one `bank_alerts` row per mail (`gmail_message_id` UNIQUE, so the same mail twice is one row), with the sender, UTR, amount, the body's SHA-256, `parsed_ok`, and `reject_reason`. The SMS text is never stored or logged. A mail is marked seen only after its row is stored.
 - **Matching** (one transaction, alert row then payment row locked): a `verifying` payment with the same UTR **and** the same amount to the paisa → `paid`, `verified_by = 'bank_alert'`, `verified_at`, the alert linked, a `payment_paid` timeline event; `payment.paid` is published after the commit. Running it twice, or two alerts for one payment, pays once.
   - No payment holds the UTR yet → the alert is kept. `POST /api/pay/{token}/utr` runs `match_for_utr` right after storing the UTR, so the alert and the UTR can arrive in either order.
@@ -577,8 +578,8 @@ sequenceDiagram
 **6. After `payment.paid`** (`app/brain/workflows.py`, registered on the bus in the lifespan)
 
 - A fixed chain under the automation role (§4.2): the payment is re-read from the database and nothing is sent unless it really is `paid`. The receipt is claimed once (a `payment_confirmed` timeline event, written under an advisory lock only if there is none yet), so a republished or repeated event never sends a second receipt.
-- `messaging.send_email` with `payment_confirmed.html` (the invoice marked PAID, with the UTR and the date) and, once the PDF receipt exists, `attachments=["receipt_pdf"]`, then `messaging.send_reply` on the customer's own channel (it names the UTR only when there is one: an admin's mark-paid has none), then `tickets.update_status(in_progress)`. A failed step is recorded and the rest still run.
-- **The PDF receipt** (stretch, §14.5: until it is built, the email goes without the attachment) (`app/payments/receipt_pdf.py`, `build_receipt_pdf(invoice, settings)`, ReportLab, A4, selectable text). `email_channel.send` renders it while it builds the mail, from the payment re-read with `load_invoice`, and adds it as `Receipt-<invoice_number>.pdf` beside the HTML and text bodies. It is attached only when that payment is `paid` and the mail is going to the payment's own customer email (checked before `EMAIL_REDIRECT_TO`), so no caller can send a receipt to anyone else. If the payment isn't paid, the recipient doesn't match, or rendering fails, the email still goes without the PDF, the failure is logged, and a `note` timeline event says why (written after the send, so a retried delivery notes it once): a receipt is never withheld. The body's "Your receipt is attached as a PDF" line shows only when it is. One receipt per payment still holds, because the email is claimed once (above). The PDF prints only real data and leaves out anything missing: the logo (`app/assets/logo.png`, from `web/src/app/icon.svg`) and `COMPANY_NAME`, then `COMPANY_ADDRESS`, `COMPANY_PHONE`, `COMPANY_EMAIL`, `COMPANY_GSTIN` when set; "Payment receipt" with a PAID mark; invoice number, paid date and time in IST, ticket number; billed to (name, email, phone); the service address; the device model, serial and its warranty on the day it was paid; the service, the reason (the ticket's title) and the reported issue (`tickets.description`, never the AI summary); the line items and total; UPI, the UTR and how it was verified (the bank alert, or the admin's name); and the footer "computer-generated receipt, no signature needed". No technician or visit date: neither is known yet. DejaVu Sans is bundled (`app/assets/fonts/`, with its licence) for the rupee sign.
+- `messaging.send_email` with `payment_confirmed.html` (the invoice marked PAID, with the UTR and the date) and `attachments=["receipt_pdf"]`, then `messaging.send_reply` on the customer's own channel (it names the UTR only when there is one: an admin's mark-paid has none), then `tickets.update_status(in_progress)`. A failed step is recorded and the rest still run.
+- **The PDF receipt** (`app/payments/receipt_pdf.py`, `build_receipt_pdf(invoice, settings)`, ReportLab, A4, selectable text). `email_channel.send` renders it while it builds the mail, from the payment re-read with `load_invoice`, and adds it as `Receipt-<invoice_number>.pdf` beside the HTML and text bodies. It is attached only when that payment is `paid` and the mail is going to the payment's own customer email (checked before `EMAIL_REDIRECT_TO`), so no caller can send a receipt to anyone else. If the payment isn't paid, the recipient doesn't match, or rendering fails, the email still goes without the PDF, the failure is logged, and a `note` timeline event says why (written after the send, so a retried delivery notes it once): a receipt is never withheld. The body's "Your receipt is attached as a PDF" line shows only when it is. One receipt per payment still holds, because the email is claimed once (above). The PDF prints only real data and leaves out anything missing: the logo (`app/assets/logo.png`, from `web/src/app/icon.svg`) and `COMPANY_NAME`, then `COMPANY_ADDRESS`, `COMPANY_PHONE`, `COMPANY_EMAIL`, `COMPANY_GSTIN` when set; "Payment receipt" with a PAID mark; invoice number, paid date and time in IST, ticket number; billed to (name, email, phone); the service address; the device model, serial and its warranty on the day it was paid; the service, the reason (the ticket's title) and the reported issue (`tickets.description`, never the AI summary); the line items and total; UPI, the UTR and how it was verified (the bank alert, or the admin's name); and the footer "computer-generated receipt, no signature needed". No technician or visit date: neither is known yet. DejaVu Sans is bundled (`app/assets/fonts/`, with its licence) for the rupee sign.
 - Then the booking (§7.7), claimed once per payment (a `job_requested` timeline event under an advisory lock), so a repeated `payment.paid` never books or reserves twice. `UPI_TEST` (no part, no visit) stops after the receipt.
 - Each step publishes `agent.tool_called` (Agent Activity) and the run writes one `ai_runs` row (`role=automation`, `trigger=payment.paid`). `payment.paid` itself reaches every dashboard over `/ws/staff`; the status changes add `ticket.updated`.
 
@@ -611,9 +612,33 @@ sequenceDiagram
 
 ---
 
+### 7.9 Telling the customer a ticket is resolved or deleted
+
+When a ticket is resolved, by any path (the ticket page's status menu, `/close`, a completed job, the copilot calling `tickets.update_status`), or deleted (`DELETE /api/tickets/{id}`), the customer hears it twice at once: an email and a message on their own channel (Discord, Telegram, web chat). Fixed text, no model; role automation, `app/brain/workflows.py`.
+
+```
+ticket.updated with status "resolved"  (workflows.on_ticket_resolved)
+  → the ticket re-read: resolved, and resolved within the last 10 minutes (a later event on a long-resolved
+    ticket is not a new resolution)
+  → claimed once per resolution: a resolution_notified timeline event keyed by resolved_at (resolved again after
+    a reopen is announced again)
+  → at the same time: messaging.send_email ticket_resolved + messaging.send_reply on the conversation the customer
+    last wrote on about it; the reply is skipped when the event says customer_told (§5.1)
+
+DELETE /api/tickets/{id}  (workflows.notify_ticket_deleted, after the delete commits)
+  → the ticket, customer and conversation read before the delete; that conversation is kept
+  → at the same time: messaging.send_email ticket_deleted + messaging.send_reply
+```
+
+- On the email channel, the chat message is itself an email in the customer's thread: no second email.
+- No email to an automated address (no-reply, postmaster, mailer-daemon: `email_channel.AUTOMATED_LOCAL_PART`), nor a reply on the email channel to one: it would only bounce back into the support inbox.
+- No email on file: the chat message alone. No conversation: the email alone.
+- A failed notice never undoes the delete or the status change; it is in the ai_runs row.
+- The bulk clean-up (`delete_ticket_rows` from a script) tells nobody.
+
 ## 8. Database
 
-**PostgreSQL 16 + pgvector.** Two Supabase free projects with the same schema: **dev**, shared by the laptops, and **prod**, used only by the server (§13.4). Use the **direct** connection on port 5432 where it works; with the Transaction pooler (port 6543) set asyncpg `statement_cache_size=0`. Fallback: local Docker `pgvector/pgvector:pg16`. Same schema everywhere. `make db-reset` and `make seed` wipe whatever database `DATABASE_URL` points at: never run them with the prod URL except on purpose before a jury.
+**PostgreSQL 16 + pgvector.** One Supabase project shared by the team (use the **direct** connection on port 5432; if you must use the pooler, set asyncpg `statement_cache_size=0`). Fallback: local Docker `pgvector/pgvector:pg16`. Same schema either way.
 
 On a network without IPv6, use the Supabase **Session pooler** (`aws-0-<region>.pooler.supabase.com`, port 5432) instead: the direct host `db.<ref>.supabase.co` resolves to an AAAA record only, so it is unreachable over IPv4.
 
@@ -781,7 +806,7 @@ CREATE TABLE conversations (
   channel             TEXT NOT NULL CHECK (channel IN ('discord','telegram','email','web')),
   external_thread_id  TEXT NOT NULL,
   ticket_id           UUID REFERENCES tickets(id),
-  context             JSONB NOT NULL DEFAULT '{}',  -- {"awaiting":"serial_number"} or {"awaiting":"payment_details","collected":{...}}
+  context             JSONB NOT NULL DEFAULT '{}',  -- {"awaiting":"serial_number"|"email","pending":{...}} or {"awaiting":"payment_details","collected":{...}}
   last_message_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (channel, external_thread_id)
@@ -998,7 +1023,7 @@ In-process async event bus (`app/core/events.py`). Every event is (1) handled by
 | `payment.paid` / `payment.failed` | UPI verifier (`app/payments/upi_verifier.py`, a matched bank alert, or an admin's pasted bank SMS) · payments MCP (`mark_paid_manually`; `reject_payment` for `payment.failed`) | **post-payment workflow** (`payment.paid`); dashboard |
 | `job.assigned` / `job.status_changed` / `job.completed` | dispatch MCP | technician portal; dashboard; `job.status_changed` → the on-the-way message and the **cancellation workflow**; `job.completed` → the **completion workflow** (§7.8) |
 | `job.rejected` | dispatch MCP (`reject_job`) | the **rejection workflow** (§7.7: another technician, the part still held); technician portal; dashboard |
-| `stock.low` | inventory MCP | dashboard (the booking chain, or the completion workflow as a backstop, sends the restock email and the admin notification, §7.8) |
+| `stock.low` | inventory MCP | dashboard (the completion workflow sends the restock email and the admin notification, §7.8) |
 | `notification.created` | messaging MCP | bell icon |
 
 The MCP servers are separate processes, so they report events by calling `POST /internal/events` on the backend (shared secret header `X-Internal-Key`).
@@ -1015,6 +1040,7 @@ The MCP servers are separate processes, so they report events by calling `POST /
 | `GET /api/tickets/{id}` | Ticket + customer + product + summary + diagnostics + payment + job |
 | `GET /api/tickets/{id}/timeline` | Messages + events merged, across all channels |
 | `PATCH /api/tickets/{id}` | Status, priority, assignee |
+| `DELETE /api/tickets/{id}` | Delete a ticket for good (204). Agents and admins. In one transaction, with the ticket row locked: its messages and their outbox rows, payments and the bank alerts matched to them, closed jobs, `ai_runs`, the notifications linking to it, and (by cascade) its timeline and diagnostics. Stock movements stay, unlinked, so the inventory history still adds up. Its conversations are unlinked with `context` cleared, and deleted when left empty. Customers, products and addresses are never touched. Refused (409) while a job is open (cancel it first, which releases the part) or a payment is `verifying`. Publishes `ticket.updated` (`reason: ticket_deleted`). Not an MCP tool: no model can delete a ticket. Once it is gone, the customer is told by email and on their channel (§7.9); the conversation they are told on is kept |
 | `POST /api/tickets/{id}/polish` | Writer preview: `{text}` → `{polished}` |
 | `POST /api/tickets/{id}/messages` | Send reply `{text, original?, internal_note?}` |
 | `GET /api/tickets/{id}/suggestions` | Suggested action chips (§7.5): `{ticket_id, chips [{name, args, label, needs_args}], source (ai \| rules), cached}`. Agents and admins |
@@ -1048,84 +1074,93 @@ The MCP servers are separate processes, so they report events by calling `POST /
 | `GET /api/dev/channels` | Which channel adapters are connected in this process (§15 checklist). Dev only |
 | `POST /api/dev/simulate-bank-alert` | `{utr, amount, include_secret?, sender?}`: builds a realistic forwarded bank credit SMS (with `BANK_SECRET` unless `include_secret` is false) and runs it through the **same** verifier checks, parser, and matcher as a mail from the inbox (§7.6), so a match sets off the real `payment.paid` workflow. Dev only, staff login required. Returns `{bank_alert_id, parsed_ok, reject_reason, utr, amount, match, payment_id, invoice_number, sender, sms}` with the secret masked |
 
-Each route is built in the block of the feature it serves (§14.3). These come with stretch features (§1) and wait until their block has time: `GET/POST/PATCH /api/payments`, `GET /api/payments/{id}`, `POST /api/payments/{id}/reject`, `POST /api/payments/{id}/cancel`, `GET/POST /api/bank-alerts` (the admin payments page); `POST/PATCH/DELETE /api/commands` (custom commands; `GET` with the built-ins is Block 3); `GET /api/inventory`, `GET /api/restock-requests` (the inventory page); `POST /api/jobs/{id}/reject`.
-
 ---
 
 ## 11. Frontend
 
 ### 11.1 Stack
 
-Next.js 16 (App Router) + React 19 + TypeScript, Tailwind v4, shadcn/ui (the `radix-ui` package), `next-themes` (light/dark/system), `cmdk` (⌘K search and `/` command menu), Framer Motion (only where noted), `lucide-react`, `qrcode.react` (the pay page's QR), `openapi-typescript` for API types, `react-markdown` + `remark-gfm` to render the copilot's Markdown answers and tables (`components/markdown.tsx`, no raw HTML). Data fetching is a small typed `fetch` wrapper (`lib/api.ts`, types from `lib/api-types.ts`) plus `lib/ws.ts` and `lib/sse.ts`; no query library, no toast library unless a block needs one. No map library: an address is text plus maps links (§7.7). Every dependency is pinned to an exact version (§18.3).
-
-Every staff page uses one pattern for loading, empty and error states (`components/states.tsx`), in both themes.
+Next.js (App Router) + TypeScript, Tailwind v4, shadcn/ui (Radix primitives), `next-themes` (light/dark/system), TanStack Query, `cmdk` (⌘K search and `/` command menu), Framer Motion (only where noted), `lucide-react`, Sonner toasts, `openapi-typescript` for API types, `react-markdown` + `remark-gfm` (pinned) to render the copilot's Markdown answers and tables (`components/markdown.tsx`, no raw HTML). No map library: an address is text plus maps links (§7.7).
 
 ### 11.2 Pages
 
 | Route | Who | What |
 |---|---|---|
-| `/` | Public | Home: the company logo (`components/brand.tsx`, also `app/icon.svg`) and name, an animated hero (a support conversation inside a laptop, still under `prefers-reduced-motion`), and two role choices: **Go as customer** → `/support` (no account, no sign-up) and **Login as service agent** → `/login` |
-| `/login` | Staff | Role-aware login, redirects agents → `/inbox`, technicians → `/jobs`, warehouse → `/inventory`. The company's logo and name beside the form; **Home** or Escape returns to `/`. There is no sign-up page: customers never need an account |
-| `/support` | Customer | The website chat (§11.4) beside where to find a serial number and the other channels. Public, no account; **Home** or Escape returns to `/`. It calls only `POST /api/chat/session` and `WS /ws/chat/{session_id}`, whose messages run the customer intake pipeline, so payments, dispatch and inventory are out of reach in code (§4.1) |
-| `/inbox` | Agent | Three panes: views sidebar, ticket list, ticket preview |
+| `/` | Public | The welcome screen (`components/welcome/welcome.tsx`), opening on **Customer**: the ServiceMesh logo, "Support that keeps up with your devices.", a sample ticket stub, and a Customer \| Agent switch. Customer: no account; **Start a chat** → `/support`, plus the other channels. Agent: the staff sign-in form, as on `/login` |
+| `/login` | Staff | The same welcome screen opening on **Agent**: work email, password (show / hide), **Keep me signed in** (kept: the token in `localStorage`; not kept: `sessionStorage`, gone when the tab closes), **Sign in to dashboard**. Redirects agents → `/inbox`, technicians → `/jobs`, warehouse → `/inventory`. Email and password is the only sign-in: no Google or other provider, no sign-up, no password reset (an admin sets passwords). Escape returns to `/` |
+| `/support` | Customer | In the welcome screen's frame: the website chat (§11.4) beside where to find a serial number and the other channels. Public, no account; **Home** or Escape returns to `/`. It calls only `POST /api/chat/session` and `WS /ws/chat/{session_id}`, whose messages run the customer intake pipeline, so payments, dispatch and inventory are out of reach in code (§4.1) |
+| `/inbox` | Agent | Search, filters, and the tickets as a grid of passes (§11.3): 3 a row beside the Any Questions sidebar on a laptop, 4 with it closed, 5 on a wide monitor |
 | `/tickets/[id]` | Agent | Full ticket: summary, unified timeline, composer with `/` commands and Polish, right rail (customer, device, diagnostics, payment, job, Agent Activity) |
-| `/copilot` | Agent | Full-page copilot chat with tool activity |
+| Any Questions | Agent, admin | The copilot chat with tool activity (§4.3), as a persistent right-hand sidebar in the staff layout (`components/any-questions/`), beside every staff page. Resizable by dragging its left edge (or the arrow keys on it; double-click resets), and toggled by the top-bar button or **Ctrl + .** (⌘ . on a Mac). Ctrl + W can't be used: browsers keep it for closing the tab. Open or closed and the width are remembered per browser; first visit opens it on a screen 1280 px or wider. Below 1024 px it is a sheet over the page. The chat survives moving between pages, not a reload. `/copilot` opens it over the inbox |
 | `/commands` | Agent | Create / edit / test custom slash commands |
 | `/inventory` | Warehouse, admin | Stock by warehouse, low-stock list, restock requests, usage this week |
 | `/payments` | Agent (read-only), admin | Every payment, by hand (§7.6): filters (status, needs review, text), newest first, live from `/ws/staff`; a drawer with line items, the payment's timeline events, its bank alerts and the ticket link; a Bank alerts tab. Admins only: New payment request, Add bank SMS, and in the drawer Mark as paid, Correct UTR, Extend link, Reject and Cancel, each with a note kept with their name. Other roles are refused. In the top bar for agents and admins |
-| `/jobs` · `/jobs/[id]` | Technician | Today's jobs, job detail with the address and its maps links, status buttons (mobile-first); while a job is assigned, Reject beside Accept, with a reason |
+| `/jobs` · `/jobs/[id]` | Technician | Today's jobs, job detail with the address and its maps links, status buttons (mobile-first); while a job is assigned, Reject beside Accept, with a reason; the jobs as passes coloured by status, and the job page headed by one |
 | `/pay/[token]` | Customer | Checkout page (§7.6 step 4): invoice, UPI QR, UTR form, live status. Its `/api/pay/*` calls are relative and proxied to the backend by the web server |
 
-### 11.3 Design direction: premium, Apple Support–inspired, light and dark
+### 11.3 Design direction: soft lavender glass, deep indigo, the ticket stub; light and dark
+
+Tokens live in `web/src/styles/tokens.css`. The direction comes from the user's sign-in mockup and runs through every page.
 
 **Principles**
 
-- Calm and precise. Content first, chrome quiet. Whitespace does the separating, not boxes.
-- Hierarchy through surface contrast and type weight, not borders and shadows everywhere.
-- One memorable element: the **unified timeline with the live Agent Activity rail**. When automations run, each MCP tool call appears in sequence (reserve part → find technician → notify customer). That's where motion lives. Everything else stays still.
-- Sentence case everywhere. No all-caps labels, no eyebrow labels above headings, no gradient washes, no decorative glow.
+- A soft lavender field behind everything, frosted white frames and white panels on it, deep indigo for the one primary action on a screen.
+- One bold element: the **ticket**, as a printed pass. The welcome screen keeps its sample stub (`ticket-stub.tsx`: a gradient top, a tear line, a stub). Inside the app, inbox cards, technician jobs and the ticket and job page headers are **passes** (`ticket/pass.tsx`): the whole card in one colour, the "# SERVICEMESH" line and a date, the reference number large, a perforated tear with punched notches, a lighter lower half with labelled fields, and the person's initials. Gradients appear nowhere else.
+- Sentence case everywhere, except the printed parts of a stub or pass (the SERVICEMESH line and date, the pill, the small field labels), which follow the printed-ticket look of the mockups.
 
-**Color tokens** (Apple system-color family)
+**Color tokens**
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `canvas` | `#F5F5F7` | `#000000` | Page background |
-| `surface` | `#FFFFFF` | `#1C1C1E` | Panels, list rows |
-| `surface-raised` | `#FFFFFF` + shadow | `#2C2C2E` | Popovers, sheets, menus |
-| `ink` | `#1D1D1F` | `#F5F5F7` | Primary text |
-| `ink-secondary` | `#6E6E73` | `#98989D` | Metadata |
-| `hairline` | `#D2D2D7` | `#38383A` | Dividers |
-| `accent` | `#0071E3` | `#2997FF` | Links, primary buttons, focus ring |
-| `success` / `warning` / `danger` | `#34C759` / `#FF9500` / `#FF3B30` | `#30D158` / `#FF9F0A` / `#FF453A` | Status + priority |
-| `channel-telegram` / `channel-discord` / `channel-email` / `channel-web` | `#32ADE6` / `#5856D6` / `#AF52DE` / `#30B0C7` | `#64D2FF` / `#5E5CE6` / `#BF5AF2` / `#40C8E0` | Channel badges only (icon + tint), never status |
+| `field` | `#ECE8FA → #E3E7FB → #F4E9F2` | `#15102B → #0F1230 → #1C1027` | The page background (a fixed gradient on `body`) |
+| `canvas` | `#F1EFF9` | `#120F24` | Flat stand-in for the field: chips, tracks, notches |
+| `surface` / `surface-raised` | `#FFFFFF` / `#FFFFFF` + shadow | `#1B1733` / `#241F42` | Panels, cards, popovers |
+| `frost` | white 55% | `#241F42` 55% | Frames, top bar, the Any Questions sidebar (with backdrop blur) |
+| `ink` / `ink-secondary` | `#1E1A33` / `#6F6B86` | `#F2F0FA` / `#A9A4C4` | Text |
+| `hairline` | `#E5E2EF` | `#2E2850` | Dividers, field borders |
+| `accent` / `on-accent` | `#2C1B64` / white | `#B3A6FF` / `#17122E` | Primary buttons, the active tab and nav pill, and the text on them |
+| `violet` | `#7461E8` | `#9C8CFF` | Focus rings, links, highlights |
+| `success` / `warning` / `danger` | `#15803D` / `#B45309` / `#E11D48` | `#34D399` / `#FBBF24` / `#FB7185` | Status, flags; all pass 4.5:1 as text on `surface` |
+
+The welcome stub's gradients (`--prio-*`): urgent `#E8435A → #F58A86`, high `#EE6A45 → #F6AA78`, medium `#5B4BDB → #9B8AF2`, low `#1F9CB8 → #6CD0BE`. The pass colours (`--pass-*`, both themes): red `#E23E4F → #F48B95`, orange `#EF6418 → #FBAB68`, yellow `#F3BB22 → #FBE184`, green `#1F9E58 → #73D69A`, violet `#5B4BDB → #9B8AF2`, slate `#5F6B80 → #A8B2C3`. A ticket's priority picks its pass: urgent red, high orange, medium yellow, low green. A job's status does: assigned yellow, accepted violet, on the way orange, arrived red, completed green, cancelled slate. The top of a pass carries white words (dark on yellow); its lower half is a lighter tint with ink words, so every detail reads on every colour. The logo is four dots on a white tile: `#5B4BDB`, `#8F7CF2`, `#F0507A`, `#F2646B` (also `app/icon.svg`).
 
 **Type**
 
-- One family: the system UI stack `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", Roboto, sans-serif`. Renders SF Pro on Apple devices for the authentic feel.
-- Scale: 34 / 28 / 22 / 17 (body) / 15 / 13. Semibold for titles, regular for body, tight letter-spacing on 28+.
+- Plus Jakarta Sans for everything, self-hosted at build time by `next/font`. Titles bold with tight letter-spacing (−0.03em to −0.04em on display sizes).
+- Scale: 34 / 28 / 22 / 17 (body) / 15 / 13.
 - `font-variant-numeric: tabular-nums` for ticket numbers, amounts, stock counts, times.
 
 **Shape and depth**
 
-- Radius hierarchy: 20px page panels, 14px list groups and cards, 10px inputs and buttons, fully rounded status pills.
-- Shadows only on floating layers (popovers, sheets, command menu). Resting surfaces use surface contrast.
-- Top bar: translucent with `backdrop-filter: blur(20px) saturate(180%)`, hairline bottom border.
+- Radius hierarchy: 40px outer frames, 32px page panels, 22px cards, 14px fields and buttons, fully rounded pills, tabs and chips.
+- Resting cards: a hairline ring and a faint indigo shadow. A hovered ticket stub lifts, with a glow in its own priority colour.
+- Top bar: frosted (`frost` + `backdrop-filter: blur(20px)`), the active page as a filled indigo pill.
 
 **Motion**
 
-- Agent Activity rail: tool calls appear one by one with a short slide and a check.
-- User-triggered only elsewhere: sheet open, command menu, polish preview reveal.
+- One entrance per page: the welcome screen's sample stub settles into place; the inbox stubs rise in, staggered. A ticket that arrives or changes over `/ws/staff` pulses its ring.
+- Answering the person: the Customer | Agent pill slides, the card lift on hover, chip press, the sidebar sliding open and closed, the resize handle; tool calls appear one by one in Any Questions and the Agent Activity rail.
 - Respect `prefers-reduced-motion`.
 
-**Ticket row**
+**Ticket card** (`components/ticket/ticket-card.tsx`, a pass)
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│ [laptop icon]  Battery not charging                    High   2m ago  │
-│                Riya Sharma — Aurora 14, Silver                        │
-│                SR-2026-00042   [discord][mail]   Awaiting customer  +2 │
-└───────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────┐
+│ # SERVICEMESH         OCT 09 │  the priority's colour, the whole card
+│ [URGENT] (device)            │
+│ Aurora 14                    │
+│ SR-2026-00042                │
+◖- - - - - - - - - - - - - - -◗  the tear line
+│ Battery not charging         │  title, two lines at most
+│ Riya Sharma — Aurora 14, …   │  customer and device
+│ CHANNEL   TYPE      STATUS   │
+│ Discord   Hardware  Awaiting │
+│ [channels] [flags] [+2]      │
+│ (RS) Riya Sharma      2m ago │
+└──────────────────────────────┘
 ```
+
+**Any Questions** (`components/any-questions/chat.tsx`): suggested questions as icon chips, always at the top; the conversation in one bordered panel, answers in white bubbles beside a round assistant avatar, the person's questions in indigo on the right; a large question box with a round send button, and "Enter to send / Shift + Enter for a new line" under it.
 
 Channel glyphs stack to show the conversation crossed platforms; `+2` shows follow-ups merged by duplicate detection.
 
@@ -1164,28 +1199,21 @@ A panel on `/support` (`components/chat-widget/chat-panel.tsx`): short pre-chat 
 
 ## 12. Repository structure
 
-Owners (§14.1) in brackets: each person commits inside their own folders, so three people can push to `main` without merge fights.
-
 ```
 servicemesh/
-├── ARCHITECTURE.md                 # this file, the contract
-├── CLAUDE.md                       # rules for every Claude Code session
-├── README.md                       # live URL, setup, run, demo script, screenshots
-├── PROGRESS.md                     # one entry per jury round: shown, jury said, next (§14.4)
-├── .gitignore                      # tracked from the first commit: .env, .env.*, !*.example, .venv, node_modules, .next, __pycache__, backend/.cache
-├── .gitattributes                  # * text=auto eol=lf (Windows laptops)
+├── ARCHITECTURE.md
+├── CLAUDE.md                       # "read ARCHITECTURE.md first; follow names exactly"
+├── README.md                       # setup, run, demo script, screenshots
 ├── Makefile                        # make db-reset, make seed, make mcp, make api, make web, make types, make llm-check
 ├── docker-compose.yml              # optional local Postgres (pgvector/pgvector:pg16)
-├── deploy/                         # [P3] §17: Caddyfile, servicemesh-{mcp,api,web}.service, deploy.sh
-├── db/                             # [P1]
+├── db/
 │   ├── schema.sql
 │   ├── apply_schema.py             # drop app tables, apply schema.sql, verify tables (make db-reset)
 │   └── seed/  (seed.py, data/*.json)
 ├── backend/
-│   ├── pyproject.toml              # uv, exact pins (§18.3)
-│   ├── .python-version             # 3.12
+│   ├── pyproject.toml              # uv
 │   ├── .env.example                # §13.2 — copy to backend/.env (backend + MCP servers read it)
-│   ├── app/                        # [P1] unless marked
+│   ├── app/
 │   │   ├── main.py                 # FastAPI app, lifespan starts bots, email poller, outbox dispatcher, MCP hub, UPI verifier
 │   │   ├── core/                   # config.py (pydantic-settings), db.py, security.py, events.py, logging.py
 │   │   ├── models/                 # SQLAlchemy models (mirror schema.sql)
@@ -1205,11 +1233,11 @@ servicemesh/
 │   │   │   ├── workflows.py        # payment.paid, job.completed, stock.low chains
 │   │   │   ├── embeddings.py       # fastembed
 │   │   │   └── prompts/            # *.md system prompts
-│   │   ├── channels/               # [P2] base.py, discord_bot.py, telegram_bot.py, email_channel.py, web_chat.py, dispatcher.py, identity.py, inbound.py (adapter → intake: typing, fallback reply), lifespan.py (adapters + dispatcher in the API process)
-│   │   ├── payments/               # [P1; upi_verifier.py P2] UPI (§7.6): money.py, details.py (booking details), invoice.py, receipt_pdf.py (stretch), upi_verifier.py (bank alerts → payment.paid)
+│   │   ├── channels/               # base.py, discord_bot.py, telegram_bot.py, email_channel.py, web_chat.py, dispatcher.py, identity.py
+│   │   ├── payments/               # UPI (§7.6): money.py, details.py (booking details), invoice.py, receipt_pdf.py (the PDF receipt), upi_verifier.py (bank alerts → payment.paid)
 │   │   ├── assets/                 # logo.png (from web/src/app/icon.svg) and fonts/ (DejaVu Sans + its licence) for the PDF receipt
-│   │   └── templates/email/        # [P2] reply, payment_link, payment_confirmed, job_assigned, visit_scheduled, restock_alert (.html + .txt)
-│   ├── mcp_servers/                # [P2]
+│   │   └── templates/email/        # payment_link, payment_confirmed, job_assigned, visit_scheduled, restock_alert, ticket_created, ticket_resolved, ticket_deleted (.html + .txt)
+│   ├── mcp_servers/
 │   │   ├── common/                 # db.py, events.py (POST /internal/events)
 │   │   ├── tickets_server.py       # :8101
 │   │   ├── catalog_server.py       # :8102
@@ -1220,8 +1248,8 @@ servicemesh/
 │   │   ├── inventory_server.py     # :8107
 │   │   └── run_all.py
 │   └── tests/                      # smoke tests: each MCP tool, intake happy path, UPI bank-alert parsing and matching
-└── web/                            # [P3]
-    ├── package.json                # pnpm, exact pins (§18.3)
+└── web/
+    ├── package.json                # pnpm
     ├── .env.local.example          # §13.3 — copy to web/.env.local
     ├── src/app/                    # routes from §11.2
     ├── src/components/             # ui/ (shadcn), ticket/, timeline/, composer/, activity-rail/, chat-widget/
@@ -1233,21 +1261,18 @@ servicemesh/
 
 ## 13. Environment variables and keys
 
-### 13.1 Keys you need to get (all free, all before H0)
-
-Getting keys and creating accounts is setup, not code: do all of it the day before (§14.2), and keep every value in a shared password manager or private note, never in the repo. Rows marked **×2** need a dev and a prod copy (§13.4).
+### 13.1 Keys you need to get (all free)
 
 | Key | Where | Steps |
 |---|---|---|
-| `GROQ_API_KEY` (one per person + one for the server) | console.groq.com | API Keys → Create API Key. Free, no card. Limits are per organization, so each person makes their own, and the server gets its own so dev testing never spends the demo's quota. Check them with `make llm-check`. |
+| `GROQ_API_KEY` | console.groq.com | API Keys → Create API Key. Free, no card. Limits are per organization, so teammates can share one org or use their own. Check them with `make llm-check`. |
 | `JEV_API_KEY` (optional) | The free gateway's dashboard (BeatAPI free route) | Create a key there, and copy the gateway's base URL, path, and model id into `JEV_BASE_URL`, `JEV_PATH`, `JEV_MODEL`. Only needed with `DECISION_PROVIDER=jev`. |
 | Ollama (optional, no key) | ollama.com, on the 16GB laptop | Install it, run `ollama pull qwen2.5:7b`, set the environment variable `OLLAMA_HOST=0.0.0.0` and restart Ollama, and allow inbound TCP port 11434 in Windows Firewall. Teammates then set `OLLAMA_BASE_URL=http://<that-laptop-ip>:11434/v1`. |
-| `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID` **×2** | discord.com/developers/applications | New Application → Bot → Reset Token. Enable **Message Content Intent**. OAuth2 → URL Generator → scopes `bot`, `applications.commands`; permissions Send Messages, Read Message History, Create Public Threads, Send Messages in Threads, Attach Files → invite to your test server. |
+| `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID` | discord.com/developers/applications | New Application → Bot → Reset Token. Enable **Message Content Intent**. OAuth2 → URL Generator → scopes `bot`, `applications.commands`; permissions Send Messages, Read Message History, Create Public Threads, Send Messages in Threads, Attach Files → invite to your test server. |
 | `DISCORD_GUILD_ID`, `DISCORD_SUPPORT_CHANNEL_ID` | Discord app | User Settings → Advanced → Developer Mode on, then right-click server / channel → Copy ID. |
-| `TELEGRAM_BOT_TOKEN` **×2** | Telegram, chat with @BotFather | `/newbot` → name → username ending in `bot` → copy token. Optional: `/setdescription`, `/setuserpic`. |
-| `EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD` **×2** | **New** Gmail accounts for the project | Turn on 2-Step Verification → search "App passwords" in the Google account → create one → 16-character password. IMAP is on by default in current Gmail. The bank alerts go to the **prod** address. |
-| `DATABASE_URL` **×2** | supabase.com | New project → Connect → connection string (direct, port 5432; the Session pooler string on an IPv4-only network, §8). Change the scheme to `postgresql+asyncpg://`. Enable the `vector` extension under Database → Extensions. |
-| Server hostname | Azure (DNS name label on the VM's public IP) or DuckDNS | §17.1. |
+| `TELEGRAM_BOT_TOKEN` | Telegram, chat with @BotFather | `/newbot` → name → username ending in `bot` → copy token. Optional: `/setdescription`, `/setuserpic`. |
+| `EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD` | A **new** Gmail account for the project | Turn on 2-Step Verification → search "App passwords" in the Google account → create one → 16-character password. IMAP is on by default in current Gmail. |
+| `DATABASE_URL` | supabase.com (optional) | New project → Project Settings → Database → connection string (direct, port 5432). Enable the `vector` extension under Database → Extensions. |
 | `UPI_ID`, `UPI_PAYEE_NAME` | The company's UPI app (merchant or personal account) | The UPI ID (VPA, e.g. `aurora-devices@okaxis`) the money should reach, and the name UPI apps show for it. Use an account whose bank sends an SMS for every credit. |
 | `BANK_SECRET`, `BANK_ALERT_FROM` | You choose them | `BANK_SECRET`: a random passcode (`uv run python -c "import secrets; print(secrets.token_urlsafe(12))"`). `BANK_ALERT_FROM`: the email address the phone forwards from. Then set up the phone that receives the bank's SMS (§7.6): forward each credit SMS to `EMAIL_ADDRESS` with subject `BANK_ALERT_SUBJECT` and `BANK_SECRET` at the end of the body. |
 
@@ -1256,10 +1281,7 @@ Nothing needs a paid key: the LLMs are free tiers (§4.6), embeddings are local,
 ### 13.2 `backend/.env.example`
 
 ```bash
-# Comments always go on their own line: `KEY=   # comment` makes the comment the value (§18.1).
-
 # ---------- App ----------
-# development on laptops AND on the demo server: /api/dev/* (the stage backups) and EMAIL_REDIRECT_TO only work in development (§17.3).
 APP_ENV=development
 APP_NAME=ServiceMesh
 COMPANY_NAME="Aurora Devices"
@@ -1268,33 +1290,26 @@ COMPANY_ADDRESS=
 COMPANY_PHONE=
 COMPANY_EMAIL=
 COMPANY_GSTIN=
-# Server: https://<host> for all three (§17.3). Pay links are FRONTEND_URL/pay/<token>.
 FRONTEND_URL=http://localhost:3000
 BACKEND_URL=http://127.0.0.1:8000
 CORS_ORIGINS=http://localhost:3000
-# openssl rand -hex 32 (a different value on the server)
-JWT_SECRET=
+JWT_SECRET=                         # openssl rand -hex 32
 JWT_EXPIRE_MINUTES=720
-# openssl rand -hex 32. MCP servers send it to POST /internal/events.
-INTERNAL_API_KEY=
+INTERNAL_API_KEY=                   # openssl rand -hex 32 — MCP servers → /internal/events
 # Shared demo password for every seeded staff login (db/seed). Seeding refuses to run if empty.
 SEED_STAFF_PASSWORD=
 
 # ---------- Database ----------
-# Laptops: the Supabase dev project. Server: the Supabase prod project (§13.4).
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/servicemesh
-# Supabase direct: postgresql+asyncpg://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres
-# Supabase Session pooler (IPv4-only networks): postgresql+asyncpg://postgres.<PROJECT_REF>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/servicemesh
+# Supabase: postgresql+asyncpg://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres
 
 # ---------- LLM (free tiers only) ----------
 # Text + tool loops: groq | ollama
 LLM_PROVIDER=groq
-# Used on 429 / timeout / connection error: ollama, or empty for none (empty on the server, §17.3)
+# Used on 429 / timeout / connection error: ollama, or empty for none
 LLM_FALLBACK_PROVIDER=ollama
-# One key per person; the server has its own (§13.1)
 GROQ_API_KEY=
 GROQ_BASE_URL=https://api.groq.com/openai/v1
-# Check both ids against Groq's model list the day before; a retired id fails every call.
 MODEL_FAST=qwen/qwen3.8-27b
 MODEL_SMART=openai/gpt-oss-20b
 # Reasoning controls, per model family (Groq rejects the wrong value for a family).
@@ -1302,7 +1317,7 @@ MODEL_SMART=openai/gpt-oss-20b
 GROQ_REASONING_EFFORT=low
 # qwen/qwen3*: none (no reasoning tokens) | default | low | medium | high, or empty
 GROQ_QWEN_REASONING_EFFORT=none
-OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL=qwen2.5:7b
 OLLAMA_TIMEOUT_SECONDS=60
 LLM_MAX_TOKENS_FAST=300
@@ -1327,11 +1342,10 @@ EMBEDDING_DIM=384
 DUPLICATE_SIMILARITY_THRESHOLD=0.82
 DUPLICATE_LOOKBACK_DAYS=30
 
-# ---------- Channel switches ----------
-# true on the server (prod bots + prod Gmail) and on P2's laptop (dev bots + dev Gmail); false everywhere else (§3, §13.4)
-ENABLE_DISCORD=false
-ENABLE_TELEGRAM=false
-ENABLE_EMAIL=false
+# ---------- Channel switches (only the demo host sets these true) ----------
+ENABLE_DISCORD=true
+ENABLE_TELEGRAM=true
+ENABLE_EMAIL=true
 
 # ---------- Discord ----------
 DISCORD_BOT_TOKEN=
@@ -1372,8 +1386,7 @@ BANK_POLL_SECONDS=10
 PAYMENT_VERIFY_TIMEOUT_MINUTES=15
 
 # ---------- Operations ----------
-# Where restock alerts go (a teammate's inbox for the demo)
-WAREHOUSE_ALERT_EMAIL=
+WAREHOUSE_ALERT_EMAIL=              # where restock alerts go (a teammate's inbox for the demo)
 MAX_JOBS_PER_TECH_PER_DAY=4
 
 # ---------- MCP servers ----------
@@ -1393,325 +1406,81 @@ MCP_INVENTORY_URL=http://127.0.0.1:8107/mcp
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_WS_URL=ws://localhost:8000
 NEXT_PUBLIC_COMPANY_NAME="Aurora Devices"
-# The other channels, linked from /support (§11.2). The dev bots on laptops, the prod bots on the server (§13.4).
-# Telegram bot username, without the @
-NEXT_PUBLIC_TELEGRAM_BOT=
-# Discord server invite, https://discord.gg/...
-NEXT_PUBLIC_DISCORD_INVITE=
-# The support Gmail customers can write to (EMAIL_ADDRESS in backend/.env)
-NEXT_PUBLIC_SUPPORT_EMAIL=
 ```
-
-An empty channel variable leaves that channel on `/support` without a link.
 
 `NEXT_PUBLIC_API_URL` is also where the web server proxies `/api/pay/*` (`web/next.config.ts`, §7.6); the server fetches it itself, so `localhost` there becomes `127.0.0.1` (§4.5).
 
-On the server both are `https://<host>` and `wss://<host>` (§17.3). `NEXT_PUBLIC_*` values are baked into the build: change one, then `pnpm build` again.
-
-`.env` and `.env.local` go in `.gitignore`, and `.gitignore` itself is committed in the first commit (§18.1). The public repo only ever contains the `.example` files. Run a secret scan before every push (`git diff --cached | grep -iE "gsk_|sk-|api_key|token|password"` at minimum).
-
-### 13.4 Dev and prod
-
-Two of everything that can only be used by one process at a time, so laptops never fight the server.
-
-| Thing | Dev (laptops) | Prod (the server only) |
-|---|---|---|
-| Supabase project | `servicemesh-dev`, shared by all three laptops | `servicemesh-prod` |
-| Telegram bot | `@<name>_dev_bot`, on P2's laptop | `@<name>_bot` |
-| Discord application | "ServiceMesh Dev", on P2's laptop | "ServiceMesh" |
-| Gmail | dev address, on P2's laptop | prod address; also receives the forwarded bank SMS |
-| Groq key | each person's own | the server's own |
-| `ENABLE_*` | `true` only on P2's laptop | `true` |
-| `FRONTEND_URL` | `http://localhost:3000` | `https://<host>` |
-
-Both Discord applications are invited to one test server. A demo customer's channel accounts talk to the **prod** bots.
+`.env` and `.env.local` go in `.gitignore`. The public repo only ever contains the `.example` files. Run a secret scan before every push (`git diff --cached | grep -iE "gsk_|sk-|api_key|token"` at minimum).
 
 ---
 
-## 14. Build plan (24 hours, 3 people, a jury every 5 hours)
+## 14. Build plan (24 hours, 3 people, 4–5 Claude sessions)
 
-A jury visits every 5 hours and should see the same customer story one stage further each time, running on the live URL (§17). So each block builds a **vertical slice**: a little of every layer (MCP server → brain → channel → screen), never one whole layer at a time. A half-built layer shows a jury nothing.
+### 14.1 Roles
 
-Write the real clock times next to H0, H5, H10, H15, H20 and H24 at the start. Every block ends the same way: integrate and deploy at H*:15 (45 minutes before the jury), freeze at H*:40 (only demo-breaking fixes after it), tag, record a 60-second backup video, rehearse once.
+| Person | Owns |
+|---|---|
+| **P1 — Brain & backend** | FastAPI core, DB + seed, MCP hub, runtime, intake, writer, search, commands, workflows |
+| **P2 — MCP servers & channels** | All 7 MCP servers, Discord, Telegram, Email, web chat socket, outbox dispatcher, email templates |
+| **P3 — Frontend & design** | Design tokens, inbox, ticket detail, composer, activity rail, chat widget, technician portal, checkout, inventory, commands page |
 
-### 14.1 Roles and folders
+Build with **Claude Code** in the repo so each session can read `ARCHITECTURE.md` and run the code. Give each session one clear goal; your Pro usage resets over time, so spread heavy sessions across the 24 hours.
 
-| Person | Owns (folders, §12) | Builds |
-|---|---|---|
-| **P1 · Brain & backend** | `db/`, `backend/app/core`, `models`, `schemas`, `api`, `brain`, `payments` (except `upi_verifier.py`), and their tests | Schema, seed, FastAPI, auth, events, LLM layer, MCP hub, intake, writer, workflows, slash commands, suggestions |
-| **P2 · MCP servers & channels** | `backend/mcp_servers/`, `backend/app/channels/`, `backend/app/templates/email/`, `backend/app/payments/upi_verifier.py`, and their tests. In Block 5 also `brain/search.py`, `brain/runtime.py`, `api/search.py`, `api/copilot.py` | All 7 MCP servers, Telegram, Discord, Email, web-chat socket, outbox dispatcher, UPI verifier, search and the copilot tool loop |
-| **P3 · Frontend, design & deploy** | `web/`, `deploy/` | Design tokens, every page, the pay page, technician portal, Agent Activity rail, the server and `deploy.sh` |
+### 14.2 Phases and checkpoints
 
-Each person commits inside their own folders. A change in someone else's folder is agreed first and committed by its owner. Whoever finishes a block early pulls their next item forward from the following block. In every jury demo P1 narrates, P2 plays the customer on a phone, P3 drives the dashboard.
+Every checkpoint must be a working demo on the demo host **and pushed to the public repo**, since one of the three evaluations is online (repo + video).
 
-### 14.2 Before H0 (setup, no code)
+**Phase 1 (hours 0–6) → Checkpoint 1: "A message becomes a ticket"**
+- Session 1: repo scaffold, `schema.sql`, seed, FastAPI skeleton + auth, Next.js skeleton + tokens + login, `.env.example`, Makefile.
+- Session 2: tickets / catalog / knowledge / messaging MCP servers, MCP hub, intake pipeline (serial ask + create), web chat + Telegram adapters, basic inbox list.
+- Demo: message on Telegram or web chat → AI asks for serial → ticket with AI summary appears live in the inbox → reply arrives on Telegram.
 
-Accounts, keys and the server are setup, not code, and each can eat an hour at the venue, so all of it happens the day before.
+**Phase 2 (hours 6–12) → Checkpoint 2: "Every channel, one inbox"**
+- Session 3: Discord + Email adapters, outbox dispatcher, duplicate detection, ticket detail page, unified timeline, composer with Polish preview, realtime updates, diagnostics panel.
+- Demo: same customer complains on Discord then emails → one ticket with a +1 follow-up and raised priority; agent's rough note goes out polished on the customer's own channel.
 
-- [ ] The jury schedule and real clock times; the rules on AI tools and on bringing this design doc, confirmed with the organisers.
-- [ ] The new GitHub repo's name; it is created at H0 (public) with all three as collaborators. On every laptop, `git config user.email` is that person's GitHub email, or their commits won't count as theirs.
-- [ ] Every key in §13.1, with the dev and prod copies of §13.4, in a shared password manager or private note.
-- [ ] The server (§17.1): VM, hostname, ports 80/443 open, `uv`, Node 24, `pnpm`, Caddy and git installed.
-- [ ] UPI: the receiving UPI ID and payee name; the phone's SMS forwarder emailing each credit SMS to the prod Gmail with subject `UPI-Verify` and `BANK_SECRET` at the end, tested once with an old credit SMS.
-- [ ] Laptops: `uv`, Node 24, `pnpm`, git, Claude Code signed in. On the 16GB laptop, Ollama with `qwen2.5:7b` (optional fallback).
-- [ ] A charged phone hotspot: venue Wi-Fi often blocks Discord or mail ports.
-- [ ] Demo props: the four demo customers and serials (§8.2), one architecture slide (§3), a printed QR code of the live URL.
+**Phase 3 (hours 12–18) → Checkpoint 3: "Nothing manual"**
+- Session 4: payments / dispatch / inventory MCP servers, `/payments` command, pay page + UPI verifier, post-payment workflow, technician portal, restock alert, Agent Activity rail.
+- Demo: `/payments battery replacement` → customer gives details → pays → technician notified, part reserved, customer gets chat + email confirmation → technician completes → stock drops → restock email fires.
 
-### 14.3 The five blocks
+**Phase 4 (hours 18–24) → Final**
+- Session 5: natural-language search, suggested chips, custom slash commands page, copilot page, inventory page, empty/error states, dark mode pass, README with setup + screenshots, demo video, reset-demo polish.
 
-**Block 1 · H0–H5 → Jury 1: "A message becomes a ticket"**
+**Cut order if behind** (last in, first out): copilot page → inventory page UI (keep the email alert) → custom command editor (keep built-in commands).
 
-Done when: a Telegram message and a web-chat message each create a ticket that appears live on the deployed dashboard, and the reply arrives on the same channel. About 20 commits.
-
-- **H0:00–0:30, all:** create the repo; first commits are `ARCHITECTURE.md`, `CLAUDE.md`, `README.md`, `.gitignore`, `.gitattributes`, both `.env.example` files. Everyone clones, fills a local `.env` with dev values, starts a Claude session.
-- **P1:** `db/schema.sql` (the whole of §8.1 now, so no migrations later) and `apply_schema.py`; FastAPI skeleton, settings, `/api/health`; seed (§8.2: staff logins, the 4 demo customers and their devices, models, parts, service catalog, playbooks; the 600 units and historical tickets may follow in Block 2); JWT auth; event bus, `/ws/staff`, `/internal/events`; `llm.py` (`complete`, `complete_json`, the fallback order of §4.6) and `make llm-check`; `mcp_hub.py` for the four servers; **intake v1**: §7.1 without duplicates and without slots other than the serial — `extract_serial` plus one `complete_json` (no `decide.py` yet), `lookup_serial`, `create_ticket`, playbook → summary, `send_reply`, the §15 fallback reply; `POST /api/dev/simulate`; `GET /api/tickets`.
-- **P2:** `mcp_servers/common`; **tickets** (:8101: `create_ticket`, `get_ticket`, `add_message`, `update_status`, `update_summary`, `set_diagnostic_plan`), **catalog** (:8102, all of §5.2), **knowledge** (:8103: `get_playbook`), **messaging** (:8104: `send_reply`, `notify_staff`); `run_all.py`; each checked in MCP Inspector; channel base, `identity.py`, outbox dispatcher; **Telegram** adapter; web-chat socket and `POST /api/chat/session`.
-- **P3:** Next.js scaffold, tokens (§11.3), light/dark toggle, home page `/`; `deploy/` and the **first deploy by H2:30** (§17.5); `/login`, staff shell, `/inbox` (mock JSON shaped like the API, then the real `GET /api/tickets` and `/ws/staff`); `/support` with the chat panel (§11.4).
-- **H4:15** integrate and deploy · **H4:40** freeze, tag `v0.1-jury1`.
-- **Jury 1 sees:** Telegram, then the web chat on a judge's own phone → the AI asks for the serial → the ticket appears live on the dashboard → the reply arrives on the same channel; MCP Inspector on the tickets server ("the AI acts only through these tools").
-- **Not yet:** duplicates, Discord, Email, `decide.py`, `runtime.py`, embeddings (`create_ticket` stores a null embedding until Block 2).
-
-**Block 2 · H5–H10 → Jury 2: "Every channel, one inbox"**
-
-Done when: Riya complains on Discord, then emails; both land on one ticket with +1 and a raised priority, and the agent's rough note goes back to her polished, on her own channel. About 18 commits (38 in total).
-
-- **H5:00–5:20, all:** the jury's comments into `PROGRESS.md`; fix what they flagged first.
-- **P1:** `embeddings.py` (fastembed) and embeddings for new and seeded tickets; §7.2 duplicate detection, including follow-ups with no serial; `decide.py` (`classify_intake`, `is_duplicate`); the ticket API (`GET /api/tickets/{id}`, `/timeline`, `PATCH`, `POST /messages`, `PATCH /diagnostics/{step_id}`); `writer.py` and `POST /polish` (§7.3); linking a customer across channels by serial (§6.3); `POST /api/dev/reset-demo`.
-- **P2:** **Discord** adapter (§6.2); **Email** adapter (IMAP with `BODY.PEEK`, Gmail threading, `reply.html`, `EMAIL_REDIRECT_TO`, and bank-alert mail excluded from intake from day one); tickets `find_similar_tickets`, `add_followup`, `record_diagnostic`; knowledge `suggest_next_steps`, `search_kb`.
-- **P3:** `/tickets/[id]`: title bar, AI summary, one timeline across channels, composer with the Polish preview side by side, right rail (customer, device, warranty, diagnostics); inbox rows per §11.3 (channel glyphs, priority, `+N`); live updates on both pages.
-- **H9:15** integrate and deploy · **H9:40** freeze, tag `v0.2-jury2`.
-- **Jury 2 sees:** Discord, then email from Riya → one ticket, +1, priority up → a polished reply on Discord → Reset demo in under 5 seconds.
-- **Not yet:** payments, dispatch, inventory.
-
-**Block 3 · H10–H15 → Jury 3: "The customer pays, nothing manual"**
-
-Done when: on the live URL, `/payments` on Riya's ticket collects her details in chat and sends a pay link; a real UPI payment from a phone is verified from the forwarded bank SMS; she gets a receipt email and a chat confirmation. About 18 commits (56).
-
-- **P1:** `money.py`, `invoice.py`, `details.py`; `commands.py` with `/payments` (§7.6 step 1) and `POST /api/tickets/{id}/commands` (SSE); `GET /api/commands` (built-ins); intake's `payment_details` slot (step 2) and `finish_payment_details` (step 3); the public pay API with its rate limits (step 4); the `payment.paid` receipt workflow (step 6, without the PDF); `POST /api/payments/{id}/mark-paid`.
-- **P2:** **payments** server (:8105: `create_payment_request`, `get_payment_status`, `submit_utr`, `mark_paid_manually`, `cancel_payment`; the admin tools of §5.5 come with the stretch payments page); `upi_verifier.py` (step 5, with its sweeps) and the `POST /api/dev/simulate-bank-alert` route (agreed with P1, §14.1); `payment_link` and `payment_confirmed` templates.
-- **P3:** `/pay/[token]` with every state of §7.6 step 4; the `/api/pay/*` proxy in `next.config.ts`; the composer's `/` menu with `/payments` and its steps streaming inline; the payment card in the right rail (status, UTR, needs review, Mark as paid for admins).
-- **H13:45** deploy, then pay for real on the live URL: the ₹1 `UPI_TEST` service for rehearsals, from a different bank account than the one behind `UPI_ID` (§18.2) · **H14:40** freeze, tag `v0.3-jury3`.
-- **Jury 3 sees:** `/payments battery replacement` → Riya's details collected over two messages → pay link and invoice email → a judge pays ₹6.90 by UPI → UTR → bank SMS → "Payment received" → receipt email and Discord confirmation. If the SMS is slow on stage: `simulate-bank-alert` with the same UTR, through the real verifier.
-
-**Block 4 · H15–H20 → Jury 4: "From payment to doorstep"**
-
-Done when: `payment.paid` books the repair by itself (part reserved, technician assigned, both emailed, customer told), the technician runs the job from a phone, and the low-stock restock email has gone out, with every MCP call shown in the Agent Activity rail. About 16 commits (72).
-
-- **Rest rotation**, one 70-minute rest each, staggered so the person whose work is needed next is awake: P1 H15:20–16:30, P3 H16:30–17:40, P2 H17:40–18:50. Nobody rests in the 45 minutes before a jury.
-- **P2 (first, P1 depends on it):** **inventory** server (:8107, all of §5.7), then **dispatch** (:8106, §5.6 without `reject_job`); `job_assigned`, `visit_scheduled`, `restock_alert` templates.
-- **P1:** the booking chain after the receipt (§7.7), including the free warranty booking; the job API (`GET /api/jobs/mine`, `GET /api/jobs/{id}`, `PATCH /api/jobs/{id}`); the completion, on-the-way and cancellation chains and the low-stock alert (§7.8); `agent.tool_called` for every chain step.
-- **P3:** `/jobs` and `/jobs/[id]` on mock data first, mobile-first, one big button (Accept → On the way → Arrived → Complete), then on the real API; the Agent Activity rail (§11.3 motion); the job card on the ticket.
-- **H18:50** integrate and deploy · **H19:35** freeze, tag `v0.4-jury4`.
-- **Jury 4 sees:** the Agent Activity rail replaying what followed Riya's payment (receipt → `reserve_part` → `find_technician` → `create_job` → emails → chat); the restock email that booking set off (BAT-AX14 went from 4 to its threshold of 3, §8.2); technician Ravi on a phone: Accept → On the way (Riya gets a Discord message) → Complete → ticket resolved, stock consumed.
-
-**Block 5 · H20–H24 → Final: "The AI service desk"**
-
-Done when: plain-English search, suggested chips, the built-in slash commands and the copilot work on the live URL; every staff page has its loading, empty and error states in both themes; README and the final video are done. About 14 commits (86).
-
-- **P1:** the remaining built-ins (`/diagnose`, `/summary`, `/ask`, `/escalate`, `/close`, `/parts`, `/schedule`); `suggestions.py` and `GET /api/tickets/{id}/suggestions` (§7.5).
-- **P2:** `search.py`, `tickets.search_tickets` (hybrid, reciprocal-rank fusion) and `count_tickets`, `POST /api/search` (§7.4); `runtime.py` and the router's `filter_tools` / `compact_tools` (§4.3); `POST /api/copilot` with `inventory.list_stock` and `dispatch.list_technicians`.
-- **P3:** the ⌘K palette and the inbox search; chips on the ticket page; `/copilot`; the states pattern on every page; a dark-mode pass; README screenshots.
-- **H22:30–23:00:** README (live URL, setup, architecture, what each round added); `make llm-check` on the server; a secret scan of the whole history.
-- **H23:00 code freeze.** H23:00–23:30: the full story twice on the live URL, the 3-minute final video. H23:30: tag `v1.0-final`, release notes, pitch rehearsal.
-- **Final pitch:** problem → the live story across four channels → the ₹6.90 payment → technician and restock → ⌘K search, chips, copilot → under the hood (7 MCP servers, intake can't reach payments, amounts computed in code, free-tier models) → the five tags → roadmap.
-
-### 14.4 Commits, tags and progress
-
-- **Targets:** about 20 commits by Jury 1, 38 by Jury 2, 56 by Jury 3, 72 by Jury 4, 86 at the end; at least 4 per person per block.
-- **One working step per commit**, message `type(scope): what changed`. Types: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `chore`. Scopes: `db`, `api`, `brain`, `mcp`, `channels`, `payments`, `web`, `deploy`. No "wip", "final" or padding commits.
-- **Push every 30–45 minutes**, after `git pull --rebase`. Everyone works on `main` inside their own folders; a short branch and a PR, merged the same hour, only for a risky change.
-- **Tags:** `v0.1-jury1`, `v0.2-jury2`, `v0.3-jury3`, `v0.4-jury4`, `v1.0-final`, each with a GitHub Release (three bullets and a screenshot).
-- **`PROGRESS.md`:** one entry per round: what was shown, what the jury said, what comes next.
-
-### 14.5 Cut order
-
-When a block runs late, cut from the end of this list (last in, first out): copilot page → `/inventory` page → custom slash commands and `/commands` → suggested chips → a technician rejecting a job → the PDF receipt → Jev.
-
-Emergency cuts inside a block: web chat moves from Block 1 to Block 2; Discord threads become DMs only; email threading becomes the ticket number in the subject; automatic SMS matching gives way to the admin's Mark as paid; technician emails become dashboard notifications.
-
-**Never cut:** the live deploy, `/api/dev/simulate`, `/api/dev/simulate-bank-alert`, Reset demo, the §15 fallback reply.
-
-### 14.6 Contracts to lock in the first 2 hours
+### 14.3 Contracts to lock in the first 2 hours
 
 So three people can work in parallel without breaking each other's code:
 
-1. `db/schema.sql` (§8.1) — merged first, whole.
+1. `db/schema.sql` (§8.1) — merged first.
 2. MCP tool names and argument shapes (§5) — P2 builds, P1 consumes.
 3. Pydantic response schemas → `make types` regenerates `web/src/lib/api-types.ts` — P1 builds, P3 consumes.
-4. Event names (§9) and the WebSocket message shape `{type, data, ts}`.
+4. Event names (§9) and WebSocket message shape `{type, data, ts}`.
 5. Until real endpoints exist, P3 uses mock JSON matching the Pydantic schemas.
-
-### 14.7 Claude Code sessions
-
-One person, one session, one goal per block. Start each session with:
-
-```
-Read CLAUDE.md and ARCHITECTURE.md §<sections> before writing code.
-Goal (Block <n>, <P1|P2|P3>): <your bullet from §14.3>.
-Build only that. Use names, routes, tables and tool signatures exactly as the doc gives them.
-Work only in <your folders, §14.1>.
-After each working step: run its tests, commit with a conventional message, git pull --rebase, push.
-If the doc is unclear or contradicts the code, stop and ask me.
-```
-
-Paste the jury's comments into the session at the start of each block. A session that hasn't pushed in 75 minutes is drifting: stop, integrate, push.
 
 ---
 
 ## 15. Demo safety checklist
 
-Before every jury:
-
-- [ ] The live URL opens on a phone on mobile data, not the venue Wi-Fi.
-- [ ] `POST /api/dev/reset-demo` on the server, run right before the jury, restores the demo story in under 5 seconds.
-- [ ] The demo story is scripted: 4 customers, 1 per channel, with known serials (§8.2).
-- [ ] `POST /api/dev/simulate` can inject any channel's message if a platform or the venue Wi-Fi misbehaves.
+- [ ] `POST /api/dev/reset-demo` restores the demo story in under 5 seconds.
+- [ ] Demo story scripted: 4 customers, 1 per channel, with known serials.
+- [ ] `POST /api/dev/simulate` can inject any channel's message if a platform or venue Wi-Fi misbehaves.
 - [ ] LLM calls have timeouts and a friendly fallback reply ("We've received your message and created a ticket; an agent will follow up.") so the customer never gets silence.
 - [ ] Bank-alert matching is idempotent (one row per mail, a payment pays once); workflows are safe to re-run.
 - [ ] `POST /api/dev/simulate-bank-alert` stands in for the bank's SMS if the phone or the SMS is slow on stage; it uses the real verifier.
-- [ ] `EMAIL_REDIRECT_TO` is set on the server, so every invoice and receipt lands in the team's inbox (with the real recipient in the subject).
-- [ ] Only the server runs the prod bots; only P2's laptop runs the dev bots (§13.4).
-- [ ] On the server: the embedding model is downloaded, `pnpm build` passed, the dashboard has no console errors.
-- [ ] A 60-second backup video of this round's flow, recorded during the event, is open in a tab.
-- [ ] `make llm-check` on the server shows Groq's remaining limits; `ai_runs` shows which provider served each call.
-- [ ] No secrets in the git history (`git log -p | grep -iE "gsk_|api_key|token|password"`).
-- [ ] The round's tag is pushed and `PROGRESS.md` is updated.
+- [ ] `EMAIL_REDIRECT_TO` set on the demo host, so every invoice and receipt lands in the team's inbox (with the real recipient in the subject).
+- [ ] Only the demo host runs the bots (`ENABLE_*` flags).
+- [ ] Embedding model pre-downloaded; `pnpm build` tested once; no console errors in the dashboard.
+- [ ] Recorded backup video of the full flow.
+- [ ] Groq limits checked with `make llm-check`; `ai_runs` shows which provider served each call.
+- [ ] No secrets in git history.
 
 ---
 
 ## 16. Open items
 
-1. **Jury schedule** — the real clock times of H0 and each visit, and whether any round is judged online (then the README and video must be ready for it).
-2. **Rules** — whether AI coding tools and a design doc brought in are allowed; confirm with the organisers at H0.
-3. **Hosting** — Azure for Students, Oracle Cloud, or the laptop fallback (§17.1); decided the day before.
-4. **Company identity** — "Aurora Devices" with fictional brands; final logo and colours before H0.
-5. **Groq model ids** — `MODEL_FAST` and `MODEL_SMART` checked against Groq's model list the day before.
-6. **Jev free route** — confirm the gateway base URL, model id, and rate limits before setting `DECISION_PROVIDER=jev`; send only seeded demo data through it. Stretch.
-7. **Not designed yet** — marking a restock request ordered or received (no route), copilot chat history, a copilot linked to the ticket page.
-
----
-
-## 17. Deployment
-
-Everything runs on one always-on Linux VM behind Caddy, on one HTTPS hostname. Pay links then open on any phone, judges click a real URL, and the bots, IMAP polling and the UPI verifier keep running whatever the venue Wi-Fi does.
-
-### 17.1 Where
-
-| Option | Cost | Catch | Use it if |
-|---|---|---|---|
-| **Azure for Students** VM, B2s (2 vCPU, 4 GB), Ubuntu 24.04 | USD 100 credit for 12 months, no card | Verification needs a college email; pick a region the subscription allows | First choice |
-| **Oracle Cloud Always Free**, Ampere A1 (up to 4 cores, 24 GB), Ubuntu 24.04 | Free | Needs a Visa or Mastercard to verify (RuPay is refused); A1 capacity in Indian regions can take days | You have such a card and a few days |
-| The 16GB laptop + a Cloudflare **named** tunnel | Free | The laptop must stay on and online; a stable hostname needs a domain on Cloudflare | Neither VM works out |
-
-**Not a free app host.** Render's free web services block SMTP ports 25, 465 and 587 and sleep when idle; Railway disables SMTP on its Free, Trial and Hobby plans; Hugging Face Spaces doesn't open port 993 for IMAP. Each would quietly break email replies and payment verification, and a sleeping process drops the bots. Cloudflare quick tunnels don't carry SSE and change URL on every restart, so they suit only the pay page during development (§7.6 step 3). Vercel is optional for the web app: its free Hobby plan deploys only the account owner's commits on a private repo, so with three committers the VM serves the web app too.
-
-**Hostname:** on Azure, a DNS name label on the VM's public IP (`<name>.<region>.cloudapp.azure.com`); on Oracle, a free DuckDNS subdomain. Open 80 and 443 in the cloud firewall (Azure network security group, Oracle security list) and in `ufw`; SSH stays on 22, key login only.
-
-### 17.2 Layout on the server
-
-- **Caddy** on 443 with an automatic Let's Encrypt certificate. `/api/*` and `/ws/*` go to FastAPI on `127.0.0.1:8000`; everything else goes to Next.js on `127.0.0.1:3000`. `/internal/*` is not exposed (Caddy answers 404). Caddy passes SSE and WebSockets through as they are.
-- One hostname means no CORS trouble, the dashboard's WebSocket and SSE work, and pay links are `https://<host>/pay/<token>`. The Next.js `/api/pay/*` rewrite is unused on the server, because Caddy sends `/api/*` straight to FastAPI.
-- **Three systemd services**, `Restart=always`, run as a non-root `deploy` user from the repo checkout:
-
-| Service | Working directory | Command |
-|---|---|---|
-| `servicemesh-mcp` | `backend/` | `uv run python -m mcp_servers.run_all` |
-| `servicemesh-api` | `backend/` | `uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1` (one worker) |
-| `servicemesh-web` | `web/` | `pnpm start -p 3000 -H 127.0.0.1` |
-
-- `--proxy-headers` makes the pay API's per-IP rate limit see the visitor's address, not Caddy's (§7.6 step 4).
-- The MCP hub retries a server that was down on the next call (§4.3), so the start order doesn't matter.
-- The database is the Supabase **prod** project.
-
-### 17.3 Server settings that differ from a laptop
-
-`backend/.env` and `web/.env.local` are written by hand on the server and never committed.
-
-- `FRONTEND_URL` and `CORS_ORIGINS` = `https://<host>`; `NEXT_PUBLIC_API_URL=https://<host>`, `NEXT_PUBLIC_WS_URL=wss://<host>` (baked in at build time: rebuild after a change).
-- `APP_ENV=development` stays on the demo server: the backup routes under `/api/dev/` (admin or staff login required) and `EMAIL_REDIRECT_TO` only work in development.
-- `ENABLE_DISCORD`, `ENABLE_TELEGRAM`, `ENABLE_EMAIL=true` with the **prod** bots, prod Gmail and the server's own Groq key (§13.4).
-- `BACKEND_URL` and every `MCP_*_URL` stay on `127.0.0.1`. `LLM_FALLBACK_PROVIDER` is empty: the server can't reach a laptop's Ollama, and the §15 fallback reply covers a Groq limit.
-- Its own `JWT_SECRET` and `INTERNAL_API_KEY`.
-
-### 17.4 `deploy/deploy.sh`
-
-Run on the server from the repo root; it stops at the first failure.
-
-1. `git pull --ff-only`
-2. `cd backend && uv sync --frozen`
-3. `cd web && pnpm install --frozen-lockfile && pnpm build`
-4. `sudo systemctl restart servicemesh-mcp servicemesh-api servicemesh-web`
-5. Poll `https://<host>/api/health` until it answers `{"status":"ok"}` (give up after 60 s and print the last 50 lines of `journalctl -u servicemesh-api`).
-
-The schema lands whole in Block 1, so there are no migrations. Re-seeding prod is `POST /api/dev/reset-demo`, run on purpose before a jury.
-
-### 17.5 When
-
-1. The day before: VM, hostname, tools installed, ports open (§14.2).
-2. H1:30–2:30, P3: commit `deploy/Caddyfile`, the three `.service` files and `deploy.sh`.
-3. **H2:30: first deploy** of the skeleton. The live URL goes into the README from then on.
-4. After the first deploy with the API: start it once so fastembed downloads its model (about 130 MB), then `make llm-check`.
-5. Every block: deploy at the integration time (H*:15). Never deploy in the 20 minutes before a jury unless the demo path is broken.
-6. Optional, Block 5: a GitHub Action that runs `deploy.sh` over SSH on each push to `main`.
-
-### 17.6 If the venue internet dies
-
-The 16GB laptop runs all three processes on localhost against the dev database, with `ENABLE_*=false`, and the story is driven with `/api/dev/simulate` and `/api/dev/simulate-bank-alert`. That is why those routes exist from Block 1. The phone that forwards bank SMS uses mobile data, never the venue Wi-Fi.
-
----
-
-## 18. Known traps
-
-Found while prototyping this design. Each one cost real time; none needs to cost it twice.
-
-### 18.1 Setup
-
-- **Inline comments in `.env`.** `KEY=   # comment` makes the comment the value. Comments go on their own line, and `config.py` refuses to start when any value begins with `#`.
-- **`.gitignore` is committed in the first commit**, with `.env`, `.env.*`, `!*.example`, `.venv`, `node_modules`, `.next`, `__pycache__` and `backend/.cache`. Untracking it lets the next `git add .` pick up a secret.
-- **Supabase on an IPv4-only network.** The direct host `db.<ref>.supabase.co` has only an IPv6 address; use the Session pooler string (port 5432). The Transaction pooler (port 6543) needs asyncpg `statement_cache_size=0`.
-- **`make` on Windows.** It is often missing; run the line under each Makefile target in Git Bash. `.gitattributes` keeps LF line endings so shell scripts run on the server.
-- **Discord Message Content Intent** must be on in the Developer Portal, or the bot receives empty messages.
-- **Two machines, one bot token**: Telegram answers the second with HTTP 409 and Discord answers twice. Dev and prod bots (§13.4).
-- **Groq model ids** get retired; check them the day before (`make llm-check`).
-
-### 18.2 Runtime
-
-- **Loopback by IP.** `localhost` resolves to `::1` first on IPv4-only networks and costs 250 ms per connection; one MCP call measured 1,290 ms by name against 219 ms by IP (§4.5). Backend-side URLs use `127.0.0.1`; browser-side `NEXT_PUBLIC_*` URLs keep `localhost` on a laptop.
-- **Telegram polling blocks the loop** if started with `run_polling()`. Use `initialize()`, `start()`, `updater.start_polling()` inside the FastAPI lifespan (§6.2).
-- **IMAP marks mail read when fetched.** Fetch with `BODY.PEEK` and flag only what you took; bank-alert mail (subject `BANK_ALERT_SUBJECT`) is excluded from the email channel by the IMAP search and again in code (§6.2).
-- **gpt-oss reasoning tokens count against `max_tokens`.** An empty reply with `finish_reason == "length"` is retried once with double the limit; `GROQ_REASONING_EFFORT=low`, and `GROQ_QWEN_REASONING_EFFORT=none` for qwen (§4.6).
-- **Groq `tool_use_failed`** (a tool argument that doesn't match its schema) is repaired once by re-asking with the rejection (§4.6).
-- **A reply delivered twice.** The outbox dispatcher runs one tick at a time and reads delivery back from the `outbox` row (§5.4).
-- **Exceptions before CORS.** An unhandled 500 skips the CORS headers and the browser shows a CORS error instead of the cause; database errors are mapped to a 503 with CORS headers.
-- **A UPI payment to yourself** may never produce a credit SMS. Pay from a different bank account than the one behind `UPI_ID`.
-- **`NEXT_PUBLIC_*` are build-time values**: a change needs `pnpm build`.
-- **The Next.js dev server** refuses dev assets to other hostnames unless they are in `allowedDevOrigins` (e.g. `*.trycloudflare.com`), and its floating dev badge covers the pay page's QR code on a phone (`devIndicators: false`).
-- **Windows `Ctrl+C`** reaches every process in the console group; `run_all.py` starts each MCP server in its own process group and stops it with `CTRL_BREAK_EVENT`, so ports are released.
-
-### 18.3 Versions known to work together
-
-Pin exact versions (no `^` or `~`). Python 3.12 via `uv`; Node 24; `pnpm` 12.8.1.
-
-| Backend (`pyproject.toml`) | Version | Web (`package.json`) | Version |
-|---|---|---|---|
-| `fastapi` | 0.142.2 | `next` / `eslint-config-next` | 16.3.8 |
-| `uvicorn[standard]` | 0.54.0 | `react` / `react-dom` | 19.2.8 |
-| `pydantic[email]` | 2.13.5 | `typescript` | 5.9.3 |
-| `pydantic-settings` | 2.15.0 | `tailwindcss` / `@tailwindcss/postcss` | 4.3.3 |
-| `sqlalchemy[asyncio]` | 2.1.1 | `shadcn` (CLI) | 4.21.0 |
-| `asyncpg` | 0.31.0 | `radix-ui` | 1.6.7 |
-| `pgvector` | 0.5.0 | `next-themes` | 0.4.6 |
-| `mcp` | 2.2.0 | `cmdk` | 1.1.1 |
-| `openai` | 3.22.1 | `framer-motion` | 14.0.0 |
-| `httpx` | 0.28.1 | `lucide-react` | 1.49.0 |
-| `fastembed` | 0.8.1 | `qrcode.react` | 4.2.0 |
-| `discord-py` | 2.7.1 | `react-markdown` | 10.1.0 |
-| `python-telegram-bot` | 22.8 | `remark-gfm` | 4.0.1 |
-| `imap-tools` | 1.15.0 | `class-variance-authority` | 0.7.1 |
-| `aiosmtplib` | 5.1.3 | `tw-animate-css` | 1.4.0 |
-| `email-reply-parser` | 0.5.12 | `openapi-typescript` | 7.13.0 |
-| `jinja2` | 3.1.6 | `eslint` | 9.39.5 |
-| `pyjwt` | 2.15.1 | `@types/node` | 20.19.43 |
-| `bcrypt` | 5.0.0 | `@types/react` / `@types/react-dom` | 19.3.0 |
-| `reportlab` (PDF receipt, stretch) | 5.0.1 | `clsx` (shadcn's `cn()`) | 2.1.1 |
-| dev: `pytest` 9.1.1, `pytest-asyncio` 1.4.0, `pypdf` 6.19.0 | | `tailwind-merge` (shadcn's `cn()`) | 3.7.0 |
+1. ~~**Payment design**~~ — resolved 2026-10-02: UPI QR + UTR, verified against the bank's forwarded credit SMS (§7.6), replacing the ServicePay mock. The `/pay/[token]` page (§11.2) and the post-payment dispatch, stock and technician backend (§7.7, §7.8, job API) are built, and so are the technician portal (`/jobs`, `/jobs/[id]`), `/payments` from the composer's `/` menu, and the Agent Activity rail.
+2. **Company identity** — final name, logo, brands, and currency for seed data and emails.
+3. **Phase 4 built 2026-10-04:** the remaining built-in commands, custom commands and `/commands`, natural-language search (⌘K and the inbox), suggested chips, `/inventory`, one loading / error / empty pattern on every staff page, and `/copilot` (chat in the page only, not stored). Not built: marking a restock request ordered or received (no route), a copilot linked to the ticket page (`ticket_id` is accepted by the API but no page sends it).
+4. **Evaluation order** — which checkpoint is online, so the repo README and video are ready for that one.
+5. **Jev free route** — confirm the gateway base URL, model id, and rate limits before setting `DECISION_PROVIDER=jev`; send only seeded demo data through it.

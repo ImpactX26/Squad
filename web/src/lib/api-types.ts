@@ -64,7 +64,7 @@ export interface paths {
         };
         /**
          * List Tickets
-         * @description The inbox, highest priority first, then the most recently updated.
+         * @description The inbox: the §10 filters, sorted by priority then most recently updated.
          */
         get: operations["list_tickets_api_tickets_get"];
         put?: never;
@@ -75,6 +75,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tickets/{ticket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ticket
+         * @description Ticket, customer, device, summary, diagnostics, payment and job (§10).
+         */
+        get: operations["get_ticket_api_tickets__ticket_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Ticket
+         * @description Delete a ticket for good, with its timeline, messages, payments and closed jobs (§10).
+         *
+         *     Agents and admins. Refused (409) while a technician job is open or a payment is being verified.
+         */
+        delete: operations["delete_ticket_api_tickets__ticket_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Ticket
+         * @description Status, priority or assignee (§10). Every change is recorded on the timeline.
+         */
+        patch: operations["patch_ticket_api_tickets__ticket_id__patch"];
+        trace?: never;
+    };
     "/api/tickets/{ticket_id}/timeline": {
         parameters: {
             query?: never;
@@ -83,13 +113,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ticket Timeline
-         * @description The ticket's conversation across every channel, oldest first (the last 500 messages).
-         *
-         *     The messages a customer sees: from the customer, the AI and agents. Not in it yet: internal
-         *     notes, system and technician messages, and the ticket's events (§10 merges them in).
+         * Get Timeline
+         * @description Messages and events merged, across every channel the ticket has been touched on (§10).
          */
-        get: operations["ticket_timeline_api_tickets__ticket_id__timeline_get"];
+        get: operations["get_timeline_api_tickets__ticket_id__timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -98,7 +125,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/internal/events": {
+    "/api/tickets/{ticket_id}/polish": {
         parameters: {
             query?: never;
             header?: never;
@@ -108,17 +135,17 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Internal Event
-         * @description Publish an MCP server's event: handlers run and every /ws/staff connection gets it.
+         * Polish Reply
+         * @description The Writer's preview (§7.3). Never fails: a model outage returns the agent's own text.
          */
-        post: operations["internal_event_internal_events_post"];
+        post: operations["polish_reply_api_tickets__ticket_id__polish_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/dev/simulate": {
+    "/api/tickets/{ticket_id}/messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -128,17 +155,78 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Simulate
-         * @description Inject a fake inbound message on any channel (a backup when a platform is down on stage).
+         * Send Message
+         * @description Send the agent's reply on the customer's own channel, or store an internal note (§7.3).
          */
-        post: operations["simulate_api_dev_simulate_post"];
+        post: operations["send_message_api_tickets__ticket_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/dev/channels": {
+    "/api/tickets/{ticket_id}/diagnostics/{step_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Diagnostic
+         * @description Mark a step worked, failed or skipped (§10): the "what was tried" record (§5.1).
+         */
+        patch: operations["patch_diagnostic_api_tickets__ticket_id__diagnostics__step_id__patch"];
+        trace?: never;
+    };
+    "/api/payments/{payment_id}/mark-paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Payment Paid
+         * @description The admin backup when a bank alert never arrives (§7.6): payments.mark_paid_manually, with the
+         *     signed-in admin's id and their note. Emits payment.paid, so the receipt workflow runs as usual.
+         */
+        post: operations["mark_payment_paid_api_payments__payment_id__mark_paid_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Ticket Command
+         * @description Run a slash command on a ticket; the response is an SSE stream of its progress (§7.5).
+         */
+        post: operations["run_ticket_command_api_tickets__ticket_id__commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/commands": {
         parameters: {
             query?: never;
             header?: never;
@@ -146,10 +234,380 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Channels
-         * @description Which channel adapters are connected in this process, and where the others' replies go.
+         * List Commands
+         * @description The built-ins, then the signed-in agent's own custom commands (§7.5: per agent).
          */
-        get: operations["channels_api_dev_channels_get"];
+        get: operations["list_commands_api_commands_get"];
+        put?: never;
+        /**
+         * Create Command
+         * @description A new custom command, owned by the signed-in agent.
+         */
+        post: operations["create_command_api_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/commands/{command_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Command
+         * @description Delete one of the signed-in agent's own commands. Built-ins can't be deleted.
+         */
+        delete: operations["delete_command_api_commands__command_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit Command
+         * @description Change one of the signed-in agent's own commands. Another agent's is a 404.
+         */
+        patch: operations["edit_command_api_commands__command_id__patch"];
+        trace?: never;
+    };
+    "/api/tickets/{ticket_id}/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ticket Suggestions
+         * @description 3-4 suggested commands for this ticket (§7.5): one cached decide call ranks what code offers.
+         */
+        get: operations["ticket_suggestions_api_tickets__ticket_id__suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Tickets
+         * @description Search tickets in plain words: one MODEL_FAST call for the filters, none for a ticket number.
+         */
+        post: operations["search_tickets_api_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copilot
+         * @description Ask the copilot; the answer and its tool calls stream back as server-sent events (§4.3 step 5).
+         */
+        post: operations["copilot_api_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Jobs
+         * @description The signed-in technician's jobs: today and upcoming, plus any still open from an earlier day.
+         *     A job they rejected leaves their list (it is someone else's now).
+         */
+        get: operations["my_jobs_api_jobs_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Job
+         * @description One job: for its own technician, agents, or admins.
+         */
+        get: operations["get_job_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Job
+         * @description A technician moves their own job forward (with a note); an admin may cancel one (§7.7).
+         */
+        patch: operations["patch_job_api_jobs__job_id__patch"];
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Job
+         * @description The assigned technician can't take this job (§7.7): dispatch.reject_job closes it with their reason,
+         *     and the job.rejected workflow finds another technician in the background, the part still reserved.
+         */
+        post: operations["reject_job_api_jobs__job_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inventory
+         * @description Stock by warehouse (running low first), what tickets hold, and parts used this week (§7.8).
+         */
+        get: operations["inventory_api_inventory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restock-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Restock Requests
+         * @description Restock requests, open and ordered first (§7.8). Changing their status has no route in §10.
+         */
+        get: operations["restock_requests_api_restock_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Payments
+         * @description Every payment, newest first (payments.list_payments).
+         */
+        get: operations["list_payments_api_payments_get"];
+        put?: never;
+        /**
+         * Create Payment
+         * @description "New payment request": payments.create_payment_request for the ticket's customer and the address on
+         *     file, the amount computed in code (§5.5); then the link on the customer's channel and the invoice by
+         *     email, the same words /payments sends.
+         */
+        post: operations["create_payment_api_payments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payment
+         * @description The drawer: the payment, its line items, its timeline events, and the bank alerts for it or its UTR.
+         */
+        get: operations["get_payment_api_payments__payment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Payment
+         * @description Extend the link (extend_payment) and/or correct the UTR on the customer's behalf
+         *     (correct_utr_manually, the same five attempts), then match the new UTR at once.
+         */
+        patch: operations["patch_payment_api_payments__payment_id__patch"];
+        trace?: never;
+    };
+    "/api/bank-alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bank Alerts
+         * @description Every bank_alerts row, newest first: parsed UTR, amount, reject_reason and the payment it matched.
+         */
+        get: operations["list_bank_alerts_api_bank_alerts_get"];
+        put?: never;
+        /**
+         * Add Bank Alert
+         * @description "Add bank SMS": the pasted SMS runs through the same reader and matcher as a forwarded mail. Sender,
+         *     SPF and the secret aren't checked (the admin is signed in); a match pays as this admin's verification.
+         */
+        post: operations["add_bank_alert_api_bank_alerts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Payment
+         * @description A verifying payment the bank statement doesn't show: failed, with the admin's reason.
+         */
+        post: operations["reject_payment_api_payments__payment_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/payments/{payment_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Payment
+         * @description Cancel a payment that isn't paid (cancel_payment). A financial record is cancelled, never deleted.
+         */
+        post: operations["cancel_payment_api_payments__payment_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pay/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Invoice
+         * @description The invoice and how to pay it: UPI ID, payee, amount, and the upi://pay string for the QR.
+         */
+        get: operations["get_invoice_api_pay__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pay/{token}/utr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Utr
+         * @description Store the customer's UTR (payments.submit_utr), then match it against bank alerts already in.
+         */
+        post: operations["submit_utr_api_pay__token__utr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pay/{token}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description The payment's status, for the page to poll while it is verified.
+         */
+        get: operations["get_status_api_pay__token__status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -169,9 +627,113 @@ export interface paths {
         put?: never;
         /**
          * Create Chat Session
-         * @description The pre-chat form: name and email → a new chat session. Public (customers have no account).
+         * @description Start a widget session. The name and email link it to a customer (§6.2).
          */
         post: operations["create_chat_session_api_chat_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Event
+         * @description MCP servers report events here (§9); they're pushed to /ws/staff clients.
+         */
+        post: operations["post_event_internal_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dev/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate
+         * @description Inject an inbound message on any channel and run the real intake pipeline on it.
+         */
+        post: operations["simulate_api_dev_simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dev/simulate-bank-alert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate Bank Alert
+         * @description Build a realistic forwarded bank credit SMS and run it through the real verifier (§7.6).
+         *
+         *     The same checks, parser, and matcher as a mail from the inbox, so a payment it marks paid sets
+         *     off the same payment.paid workflow. Staff login and APP_ENV=development only: it is the demo's
+         *     backup when the phone or the bank's SMS is slow, never a way to pay in production.
+         */
+        post: operations["simulate_bank_alert_api_dev_simulate_bank_alert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dev/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels
+         * @description Which channel adapters are connected in this process, for the demo checklist (§15).
+         */
+        get: operations["channels_api_dev_channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dev/reset-demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Demo
+         * @description Wipe every table and re-seed the demo story, then tell open dashboards to refetch.
+         */
+        post: operations["reset_demo_api_dev_reset_demo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -182,8 +744,108 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** ChatSessionIn */
-        ChatSessionIn: {
+        /** BankAlertCreate */
+        BankAlertCreate: {
+            /**
+             * Sms
+             * @description The bank's SMS, pasted as received
+             */
+            sms: string;
+            /**
+             * Sender
+             * @description Who sent the SMS, e.g. VM-HDFCBK
+             */
+            sender?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /**
+             * Note
+             * @description What the admin checked, e.g. 'UTR seen on the bank statement'
+             */
+            note: string;
+        };
+        /** BankAlertList */
+        BankAlertList: {
+            /** Alerts */
+            alerts: components["schemas"]["BankAlertOut"][];
+        };
+        /**
+         * BankAlertOut
+         * @description One bank_alerts row (never the SMS text, §7.6) and the payment it was reconciled against.
+         */
+        BankAlertOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sender */
+            sender: string;
+            /**
+             * Added By
+             * @description The admin who pasted it on the payments page; null for a forwarded mail
+             */
+            added_by: string | null;
+            /** Utr */
+            utr: string | null;
+            /** Amount */
+            amount: string | null;
+            /** Parsed Ok */
+            parsed_ok: boolean;
+            /** Reject Reason */
+            reject_reason: string | null;
+            /** Matched Payment Id */
+            matched_payment_id: string | null;
+            /** Matched Invoice Number */
+            matched_invoice_number: string | null;
+            /** Matched Ticket Id */
+            matched_ticket_id: string | null;
+            /** Matched Ticket Number */
+            matched_ticket_number: string | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** Processed At */
+            processed_at: string | null;
+        };
+        /** BankAlertResult */
+        BankAlertResult: {
+            /** Bank Alert Id */
+            bank_alert_id: string | null;
+            /** Parsed Ok */
+            parsed_ok: boolean;
+            /** Reject Reason */
+            reject_reason: string | null;
+            /** Utr */
+            utr: string | null;
+            /** Amount */
+            amount: string | null;
+            /**
+             * Match
+             * @description paid | amount_mismatch | waiting_for_utr | duplicate | not_verifying
+             */
+            match: string | null;
+            /** Payment Id */
+            payment_id: string | null;
+            /** Invoice Number */
+            invoice_number: string | null;
+        };
+        /** ChannelsResponse */
+        ChannelsResponse: {
+            /** Channels */
+            channels: string[];
+            /** Adapters Running */
+            adapters_running: string[];
+            /** Sink Deliveries */
+            sink_deliveries: number;
+        };
+        /**
+         * ChatSessionRequest
+         * @description The pre-chat form (§6.2): a name and an email, nothing else.
+         */
+        ChatSessionRequest: {
             /** Name */
             name: string;
             /**
@@ -192,213 +854,196 @@ export interface components {
              */
             email: string;
         };
-        /** ChatSessionOut */
-        ChatSessionOut: {
+        /** ChatSessionResponse */
+        ChatSessionResponse: {
             /** Session Id */
             session_id: string;
-            /** Name */
+            /** Ws Path */
+            ws_path: string;
+            /** Greeting */
+            greeting: string;
+        };
+        /** CommandCreate */
+        CommandCreate: {
+            /**
+             * Name
+             * @description Without the slash: lowercase letters, digits, dashes
+             */
             name: string;
+            /** Description */
+            description: string;
+            /** Prompt Template */
+            prompt_template: string;
+            /** Allowed Tools */
+            allowed_tools?: string[];
         };
-        /**
-         * DevChannels
-         * @description Which channel adapters this process runs (§15 checklist).
-         */
-        DevChannels: {
-            /** Connected */
-            connected: ("discord" | "telegram" | "email" | "web")[];
-            /** Enabled */
-            enabled: ("discord" | "telegram" | "email" | "web")[];
-            /** Simulated */
-            simulated: ("discord" | "telegram" | "email" | "web")[];
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /** HealthOut */
-        HealthOut: {
+        /** CommandListResponse */
+        CommandListResponse: {
+            /** Commands */
+            commands: components["schemas"]["CommandOut"][];
+            /** Tools */
+            tools: components["schemas"]["CommandToolOut"][];
             /**
-             * Status
-             * @enum {string}
+             * Unreachable Servers
+             * @description MCP servers whose tools couldn't be listed just now, so they aren't in tools
              */
-            status: "ok" | "error";
+            unreachable_servers: string[];
             /**
-             * Db
-             * @enum {string}
+             * Variables
+             * @description The {{variables}} a template may use, and what each holds
              */
-            db: "ok" | "unreachable";
-        };
-        /**
-         * InternalEventIn
-         * @description What an MCP server POSTs to /internal/events.
-         */
-        InternalEventIn: {
-            /**
-             * Type
-             * @enum {string}
-             */
-            type: "message.received" | "message.sent" | "ticket.created" | "ticket.updated" | "ticket.followup" | "agent.tool_called" | "payment.link_sent" | "payment.utr_submitted" | "payment.paid" | "payment.failed" | "job.assigned" | "job.status_changed" | "job.completed" | "job.rejected" | "stock.low" | "notification.created";
-            /** Data */
-            data?: {
-                [key: string]: unknown;
+            variables: {
+                [key: string]: string;
             };
         };
-        /** LoginIn */
-        LoginIn: {
-            /** Email */
-            email: string;
-            /** Password */
-            password: string;
+        /**
+         * CommandOut
+         * @description A built-in (from code, §7.5) or one of the signed-in agent's custom commands (slash_commands).
+         */
+        CommandOut: {
+            /**
+             * Id
+             * @description null for a built-in
+             */
+            id: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Usage
+             * @description "/ask <what>": how to type it
+             */
+            usage: string;
+            /** Description */
+            description: string;
+            /**
+             * Args
+             * @description Whether words after the name are needed
+             * @enum {string}
+             */
+            args: "none" | "optional" | "required";
+            /**
+             * Example
+             * @description Words an agent might add, e.g. display replacement
+             */
+            example: string | null;
+            /** Is Builtin */
+            is_builtin: boolean;
+            /**
+             * Prompt Template
+             * @description Custom commands only
+             */
+            prompt_template: string | null;
+            /**
+             * Allowed Tools
+             * @description Custom commands: the only tools the model is offered
+             */
+            allowed_tools: string[];
+            /** Created At */
+            created_at: string | null;
         };
-        /** RowCustomer */
-        RowCustomer: {
+        /** CommandPatch */
+        CommandPatch: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Prompt Template */
+            prompt_template?: string | null;
+            /** Allowed Tools */
+            allowed_tools?: string[] | null;
+        };
+        /** CommandRequest */
+        CommandRequest: {
+            /**
+             * Name
+             * @description "payments" or "/payments"
+             */
+            name: string;
+            /**
+             * Args
+             * @description The text after the command, e.g. "battery replacement"
+             * @default
+             */
+            args: string;
+        };
+        /**
+         * CommandToolOut
+         * @description A tool a custom command may list: the copilot's tools, minus the ones no model is offered.
+         */
+        CommandToolOut: {
+            /** Name */
+            name: string;
+            /** Server */
+            server: string;
+            /** Description */
+            description: string;
+        };
+        /** CopilotRequest */
+        CopilotRequest: {
+            /** Message */
+            message: string;
+            /**
+             * History
+             * @description Earlier turns of this chat, oldest first; the last 8 are used
+             */
+            history?: components["schemas"]["CopilotTurn"][];
+            /**
+             * Ticket Id
+             * @description The ticket the question is about, if any
+             */
+            ticket_id?: string | null;
+        };
+        /** CopilotTurn */
+        CopilotTurn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
+        };
+        /** DiagnosticPatch */
+        DiagnosticPatch: {
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "pending" | "worked" | "failed" | "skipped";
+            /** Notes */
+            notes?: string | null;
+        };
+        /** DiagnosticStepOut */
+        DiagnosticStepOut: {
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Name */
-            name: string | null;
-        };
-        /** RowDevice */
-        RowDevice: {
-            /** Model Name */
-            model_name: string;
-            /** Serial Number */
-            serial_number: string;
-            /** Color */
-            color: string | null;
-            /** Category */
-            category: string;
-        };
-        /**
-         * SimulateIn
-         * @description A fake inbound message, handled as if the channel's adapter had received it.
-         */
-        SimulateIn: {
+            /** Position */
+            position: number;
+            /** Step */
+            step: string;
             /**
-             * Channel
+             * Suggested By
              * @enum {string}
              */
-            channel: "discord" | "telegram" | "email" | "web";
-            /** Text */
-            text: string;
+            suggested_by: "ai" | "agent" | "playbook";
             /**
-             * External User Id
-             * @description The sender's account on the channel (Telegram or Discord user id, email address, web session id). Leave it out for a new simulated customer; send back the one a response gave to go on with that conversation. A real chat id reaches that chat when its adapter runs here.
-             */
-            external_user_id?: string | null;
-            /**
-             * External Thread Id
-             * @description The conversation's thread; external_user_id when left out.
-             */
-            external_thread_id?: string | null;
-            /** Display Name */
-            display_name?: string | null;
-            /**
-             * Email
-             * @description web: the pre-chat form's email, which links the customer. email: the sender's address when external_user_id is left out.
-             */
-            email?: string | null;
-            /**
-             * Subject
-             * @description email only
-             */
-            subject?: string | null;
-        };
-        /** SimulateOut */
-        SimulateOut: {
-            /**
-             * Channel
+             * Result
              * @enum {string}
              */
-            channel: "discord" | "telegram" | "email" | "web";
-            /** External User Id */
-            external_user_id: string;
-            /** External Thread Id */
-            external_thread_id: string;
+            result: "pending" | "worked" | "failed" | "skipped";
+            /** Notes */
+            notes: string | null;
             /**
-             * Delivery
-             * @enum {string}
-             */
-            delivery: "adapter" | "simulated" | "none";
-            /**
-             * Customer Id
-             * Format: uuid
-             */
-            customer_id: string;
-            /**
-             * Conversation Id
-             * Format: uuid
-             */
-            conversation_id: string;
-            /**
-             * Message Id
-             * Format: uuid
-             */
-            message_id: string;
-            /** Awaiting */
-            awaiting: string | null;
-            ticket: components["schemas"]["SimulatedTicket"] | null;
-            /** Replies */
-            replies: components["schemas"]["SimulatedReply"][];
-            /** Intake Error */
-            intake_error: string | null;
-        };
-        /**
-         * SimulatedReply
-         * @description A reply intake queued for the simulated message.
-         */
-        SimulatedReply: {
-            /**
-             * Message Id
-             * Format: uuid
-             */
-            message_id: string;
-            /** Text */
-            text: string;
-            /** Status */
-            status: ("pending" | "sent" | "failed") | null;
-            /** Simulated */
-            simulated: boolean;
-            /** Last Error */
-            last_error: string | null;
-            /**
-             * Created At
+             * Updated At
              * Format: date-time
              */
-            created_at: string;
+            updated_at: string;
         };
-        /** SimulatedTicket */
-        SimulatedTicket: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Ticket Number */
-            ticket_number: string;
-            /** Title */
-            title: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed";
-            /**
-             * Priority
-             * @enum {string}
-             */
-            priority: "low" | "medium" | "high" | "urgent";
-            /** Flags */
-            flags: string[];
-        };
-        /**
-         * StaffEvent
-         * @description One event, as /ws/staff sends it: {type, data, ts}.
-         */
-        StaffEvent: {
+        /** Event */
+        Event: {
             /**
              * Type
              * @enum {string}
@@ -414,11 +1059,1164 @@ export interface components {
              */
             ts: string;
         };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HealthOut */
+        HealthOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "degraded";
+            /**
+             * Db
+             * @enum {string}
+             */
+            db: "ok" | "unavailable";
+        };
+        /** InternalEventIn */
+        InternalEventIn: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "message.received" | "message.sent" | "ticket.created" | "ticket.updated" | "ticket.followup" | "agent.tool_called" | "payment.link_sent" | "payment.utr_submitted" | "payment.paid" | "payment.failed" | "job.assigned" | "job.status_changed" | "job.completed" | "job.rejected" | "stock.low" | "notification.created";
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+        };
+        /** InventoryResponse */
+        InventoryResponse: {
+            /** Items */
+            items: components["schemas"]["StockItem"][];
+            /** Reservations */
+            reservations: components["schemas"]["Reservation"][];
+            /** Usage Days */
+            usage_days: number;
+            /**
+             * Usage
+             * @description Parts consumed on completed jobs, by type, in the last usage_days
+             */
+            usage: components["schemas"]["UsageByType"][];
+        };
+        /** JobAddress */
+        JobAddress: {
+            /** Line1 */
+            line1: string;
+            /** Line2 */
+            line2: string | null;
+            /** City */
+            city: string;
+            /** State */
+            state: string | null;
+            /** Postal Code */
+            postal_code: string | null;
+            /**
+             * Text
+             * @description The whole address on one line
+             */
+            text: string;
+            /**
+             * Location Url
+             * @description The maps link the customer pasted, if any (§7.6)
+             */
+            location_url: string | null;
+            /**
+             * Maps Links
+             * @description The customer's own link if saved, otherwise Google Maps and Apple Maps searches for the text
+             */
+            maps_links: components["schemas"]["MapsLink"][];
+        };
+        /** JobCustomer */
+        JobCustomer: {
+            /** Full Name */
+            full_name: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Email */
+            email: string | null;
+        };
+        /** JobDevice */
+        JobDevice: {
+            /** Model Name */
+            model_name: string;
+            /** Model Number */
+            model_number: string;
+            /** Serial Number */
+            serial_number: string;
+            /** Category */
+            category: string;
+            /** Warranty Until */
+            warranty_until: string | null;
+        };
+        /** JobListResponse */
+        JobListResponse: {
+            /** Jobs */
+            jobs: components["schemas"]["JobOut"][];
+        };
         /**
-         * StaffOut
-         * @description A signed-in staff member, as /api/me and the login response return them.
+         * JobOut
+         * @description One technician job, with what the portal shows (§7.7).
          */
-        StaffOut: {
+        JobOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "assigned" | "accepted" | "en_route" | "on_site" | "completed" | "cancelled";
+            /**
+             * Scheduled Date
+             * Format: date
+             * @description A date only: the technician phones the customer to agree the time (§7.7)
+             */
+            scheduled_date: string;
+            /** Service Code */
+            service_code: string;
+            /** Service Name */
+            service_name: string | null;
+            /**
+             * Issue
+             * @description The ticket's title
+             */
+            issue: string;
+            /** Notes */
+            notes: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Technician Id
+             * Format: uuid
+             */
+            technician_id: string;
+            /** Technician Name */
+            technician_name: string | null;
+            /** Technician Phone */
+            technician_phone: string | null;
+            customer: components["schemas"]["JobCustomer"];
+            address: components["schemas"]["JobAddress"];
+            device: components["schemas"]["JobDevice"] | null;
+            part: components["schemas"]["JobPart"] | null;
+            /**
+             * Tried
+             * @description Diagnostic steps already tried on the ticket, and how they went
+             */
+            tried: components["schemas"]["JobTried"][];
+            /**
+             * Billing
+             * @description Paid by the customer, or free under warranty
+             * @enum {string}
+             */
+            billing: "paid" | "warranty";
+            /**
+             * Invoice Number
+             * @description The paid invoice, when billing is paid
+             */
+            invoice_number: string | null;
+        };
+        /** JobPart */
+        JobPart: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sku */
+            sku: string;
+            /** Name */
+            name: string;
+            /**
+             * Warehouse Name
+             * @description Where it is reserved
+             */
+            warehouse_name: string | null;
+        };
+        /** JobPatch */
+        JobPatch: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "en_route" | "on_site" | "completed" | "cancelled";
+            /** Notes */
+            notes?: string | null;
+        };
+        /** JobReject */
+        JobReject: {
+            /**
+             * Reason
+             * @description Why the technician can't take the job
+             */
+            reason: string;
+        };
+        /** JobRejected */
+        JobRejected: {
+            /** Ok */
+            ok: boolean;
+            /**
+             * Status
+             * @description The job is closed; another technician is being found
+             * @constant
+             */
+            status: "rejected";
+        };
+        /** JobTried */
+        JobTried: {
+            /** Step */
+            step: string;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "worked" | "failed" | "skipped";
+            /** Notes */
+            notes: string | null;
+        };
+        /** LineItem */
+        LineItem: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** LoginResponse */
+        LoginResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             * @constant
+             */
+            token_type: "bearer";
+            user: components["schemas"]["StaffUserOut"];
+        };
+        /** MapsLink */
+        MapsLink: {
+            /**
+             * Label
+             * @description "Customer's map link", "Google Maps" or "Apple Maps"
+             */
+            label: string;
+            /** Url */
+            url: string;
+        };
+        /** MarkPaidRequest */
+        MarkPaidRequest: {
+            /**
+             * Note
+             * @description What the admin checked, e.g. 'UTR seen on the bank statement'
+             */
+            note: string;
+        };
+        /**
+         * MarkPaidResponse
+         * @description The payment after an admin marked it paid (§5.5 mark_paid_manually).
+         */
+        MarkPaidResponse: {
+            /**
+             * Payment Id
+             * Format: uuid
+             */
+            payment_id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Invoice Number */
+            invoice_number: string | null;
+            /** Status */
+            status: string;
+            /** Paid At */
+            paid_at: string | null;
+            /**
+             * Verified By
+             * @description The admin's staff user id
+             */
+            verified_by: string | null;
+        };
+        /** PayAddress */
+        PayAddress: {
+            /** Line1 */
+            line1: string;
+            /** Line2 */
+            line2: string | null;
+            /** City */
+            city: string;
+            /** State */
+            state: string | null;
+            /** Postal Code */
+            postal_code: string | null;
+            /** Text */
+            text: string;
+        };
+        /** PayCustomer */
+        PayCustomer: {
+            /** Full Name */
+            full_name: string | null;
+            /** Email */
+            email: string | null;
+            /** Phone */
+            phone: string | null;
+        };
+        /** PayDevice */
+        PayDevice: {
+            /** Name */
+            name: string | null;
+            /** Model Number */
+            model_number: string | null;
+            /** Serial Number */
+            serial_number: string;
+        };
+        /** PayInvoice */
+        PayInvoice: {
+            /** Invoice Number */
+            invoice_number: string;
+            /** Invoice Date */
+            invoice_date: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Problem Summary */
+            problem_summary: string;
+            device: components["schemas"]["PayDevice"] | null;
+            customer: components["schemas"]["PayCustomer"];
+            service_address: components["schemas"]["PayAddress"] | null;
+            /** Service Name */
+            service_name: string;
+            /** Line Items */
+            line_items: components["schemas"]["PayLineItem"][];
+            /** Total */
+            total: string;
+            /** Total Display */
+            total_display: string;
+            /** Currency */
+            currency: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Expires At */
+            expires_at: string;
+            /** Expires Display */
+            expires_display: string;
+            /** Utr */
+            utr: string | null;
+            /** Utr Attempts Left */
+            utr_attempts_left: number;
+            /** Paid At */
+            paid_at: string | null;
+            /** Paid Display */
+            paid_display: string | null;
+            /** @description null when UPI_ID / UPI_PAYEE_NAME aren't set */
+            upi: components["schemas"]["PayUpi"] | null;
+        };
+        /** PayLineItem */
+        PayLineItem: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /**
+             * Amount
+             * @description Two decimals, e.g. "5400.00"
+             */
+            amount: string;
+            /** Amount Display */
+            amount_display: string;
+        };
+        /** PayStatus */
+        PayStatus: {
+            /** Invoice Number */
+            invoice_number: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Utr Submitted */
+            utr_submitted: boolean;
+            /** Utr Attempts Left */
+            utr_attempts_left: number;
+            /** Paid At */
+            paid_at: string | null;
+            /** Paid Display */
+            paid_display: string | null;
+        };
+        /** PayUpi */
+        PayUpi: {
+            /** Upi Id */
+            upi_id: string;
+            /** Payee Name */
+            payee_name: string;
+            /**
+             * Amount
+             * @description Two decimals, e.g. "6199.00"
+             */
+            amount: string;
+            /**
+             * Uri
+             * @description upi://pay?pa=…&pn=…&am=…&cu=INR&tn=<ticket number>, for the QR code
+             */
+            uri: string;
+        };
+        /**
+         * PaymentCreate
+         * @description The ticket by id or by number (SR-2026-00042), one of the two.
+         */
+        PaymentCreate: {
+            /** Ticket Id */
+            ticket_id?: string | null;
+            /** Ticket Number */
+            ticket_number?: string | null;
+            /**
+             * Service Code
+             * @description A service_catalog code, e.g. BATTERY_REPLACE
+             */
+            service_code: string;
+            /**
+             * Note
+             * @description What the admin checked, e.g. 'UTR seen on the bank statement'
+             */
+            note: string;
+        };
+        /** PaymentCreated */
+        PaymentCreated: {
+            payment: components["schemas"]["PaymentRow"];
+            /**
+             * Told Customer On
+             * @description The channel the link was sent on; null when there is no chat
+             */
+            told_customer_on: string | null;
+            /** Emailed To */
+            emailed_to: string | null;
+        };
+        /**
+         * PaymentDetail
+         * @description The drawer: the row, its line items, its timeline events, and the bank alerts for its UTR.
+         */
+        PaymentDetail: {
+            /**
+             * Payment Id
+             * Format: uuid
+             */
+            payment_id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Invoice Number */
+            invoice_number: string | null;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Name */
+            customer_name: string | null;
+            /** Customer Email */
+            customer_email: string | null;
+            /** Service Code */
+            service_code: string;
+            /** Service Name */
+            service_name: string | null;
+            /**
+             * Amount
+             * @description Two decimals, e.g. "6.90"
+             */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Status
+             * @description pending | verifying | paid | failed | expired | cancelled | refunded
+             */
+            status: string;
+            /** Utr */
+            utr: string | null;
+            /** Utr Submitted At */
+            utr_submitted_at: string | null;
+            /** Utr Attempts Left */
+            utr_attempts_left: number;
+            /** Needs Review */
+            needs_review: boolean;
+            /**
+             * Verified By
+             * @description 'bank_alert', or the id of the admin who verified it
+             */
+            verified_by: string | null;
+            /**
+             * Verified By Label
+             * @description "bank alert", or the admin's name
+             */
+            verified_by_label: string | null;
+            /** Pay Url */
+            pay_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Line Items */
+            line_items: components["schemas"]["LineItem"][];
+            /** Events */
+            events: components["schemas"]["PaymentEvent"][];
+            /** Bank Alerts */
+            bank_alerts: components["schemas"]["BankAlertOut"][];
+        };
+        /**
+         * PaymentEvent
+         * @description A ticket timeline event about this payment.
+         */
+        PaymentEvent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Type */
+            type: string;
+            /** Actor */
+            actor: string;
+            /**
+             * Actor Name
+             * @description The staff member's name when the actor is one
+             */
+            actor_name: string | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** PaymentListResponse */
+        PaymentListResponse: {
+            /** Payments */
+            payments: components["schemas"]["PaymentRow"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /**
+             * Services
+             * @description The service catalog, for the New payment request form
+             */
+            services: components["schemas"]["ServiceOption"][];
+        };
+        /** PaymentNote */
+        PaymentNote: {
+            /**
+             * Note
+             * @description What the admin checked, e.g. 'UTR seen on the bank statement'
+             */
+            note: string;
+        };
+        /** PaymentPatch */
+        PaymentPatch: {
+            /**
+             * Utr
+             * @description The corrected 12-digit UTR
+             */
+            utr?: string | null;
+            /**
+             * Expires In Minutes
+             * @description Give the link this long from now (5-10080)
+             */
+            expires_in_minutes?: number | null;
+            /**
+             * Note
+             * @description What the admin checked, e.g. 'UTR seen on the bank statement'
+             */
+            note: string;
+        };
+        /**
+         * PaymentRow
+         * @description One payment, as the list and the drawer show it. Money as two-decimal strings.
+         */
+        PaymentRow: {
+            /**
+             * Payment Id
+             * Format: uuid
+             */
+            payment_id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Invoice Number */
+            invoice_number: string | null;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Customer Name */
+            customer_name: string | null;
+            /** Customer Email */
+            customer_email: string | null;
+            /** Service Code */
+            service_code: string;
+            /** Service Name */
+            service_name: string | null;
+            /**
+             * Amount
+             * @description Two decimals, e.g. "6.90"
+             */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Status
+             * @description pending | verifying | paid | failed | expired | cancelled | refunded
+             */
+            status: string;
+            /** Utr */
+            utr: string | null;
+            /** Utr Submitted At */
+            utr_submitted_at: string | null;
+            /** Utr Attempts Left */
+            utr_attempts_left: number;
+            /** Needs Review */
+            needs_review: boolean;
+            /**
+             * Verified By
+             * @description 'bank_alert', or the id of the admin who verified it
+             */
+            verified_by: string | null;
+            /**
+             * Verified By Label
+             * @description "bank alert", or the admin's name
+             */
+            verified_by_label: string | null;
+            /** Pay Url */
+            pay_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Paid At */
+            paid_at: string | null;
+        };
+        /** PolishRequest */
+        PolishRequest: {
+            /** Text */
+            text: string;
+        };
+        /** PolishResponse */
+        PolishResponse: {
+            /**
+             * Polished
+             * @description The rewrite, or the original text when it could not be polished
+             */
+            polished: string;
+            /** Original */
+            original: string;
+            /**
+             * Was Polished
+             * @description False on a model outage: the text came back untouched
+             */
+            was_polished: boolean;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Warning
+             * @description Polished, but it mentions something the note did not. Show it to the agent.
+             */
+            warning?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Latency Ms */
+            latency_ms: number;
+        };
+        /**
+         * Reservation
+         * @description A part a ticket still holds: the sum of its reserve, release and consume movements (§5.7).
+         */
+        Reservation: {
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Ticket Status */
+            ticket_status: string;
+            /** Sku */
+            sku: string;
+            /** Part Name */
+            part_name: string;
+            /** Warehouse Name */
+            warehouse_name: string;
+            /** Qty */
+            qty: number;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Job Status */
+            job_status: string | null;
+        };
+        /** ResetDemoResponse */
+        ResetDemoResponse: {
+            /** Ok */
+            ok: boolean;
+            /**
+             * Seconds
+             * @description Wall time of the whole reset, as the server saw it
+             */
+            seconds: number;
+            /**
+             * Phases
+             * @description Seconds per phase: build, serialise, truncate, insert, commit
+             */
+            phases: {
+                [key: string]: number;
+            };
+            /**
+             * Rows
+             * @description Rows now in each seeded table
+             */
+            rows: {
+                [key: string]: number;
+            };
+            /**
+             * Demo Customers
+             * @description The demo-story customers, each with no open tickets
+             */
+            demo_customers: string[];
+        };
+        /** RestockRef */
+        RestockRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Qty */
+            qty: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RestockRequestList */
+        RestockRequestList: {
+            /** Requests */
+            requests: components["schemas"]["RestockRequestOut"][];
+        };
+        /** RestockRequestOut */
+        RestockRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sku */
+            sku: string;
+            /** Part Name */
+            part_name: string;
+            /** Part Type */
+            part_type: string;
+            /** Warehouse Name */
+            warehouse_name: string;
+            /** Qty */
+            qty: number;
+            /** Reason */
+            reason: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Available Now */
+            available_now: number | null;
+        };
+        /**
+         * SearchInterpretation
+         * @description How the query was read, so the agent can see what was searched.
+         */
+        SearchInterpretation: {
+            /**
+             * Filters
+             * @description The filters tickets.search_tickets ran with, clamped in code
+             */
+            filters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Text
+             * @description The words matched by full text and meaning
+             */
+            text: string;
+            /**
+             * Summary
+             * @description One line, e.g. "open, battery, from Telegram; matching “battery”"
+             */
+            summary: string;
+            /**
+             * Ai
+             * @description Whether a model turned the words into filters
+             */
+            ai: boolean;
+        };
+        /** SearchRequest */
+        SearchRequest: {
+            /**
+             * Query
+             * @description Plain words, e.g. "open battery tickets from telegram this week"
+             */
+            query: string;
+        };
+        /** SearchResponse */
+        SearchResponse: {
+            /** Query */
+            query: string;
+            interpretation: components["schemas"]["SearchInterpretation"];
+            /** Results */
+            results: components["schemas"]["SearchResult"][];
+            /**
+             * Ranking
+             * @enum {string}
+             */
+            ranking: "rrf" | "recency" | "ticket_number" | "serial";
+            /**
+             * Notice
+             * @description Set when the search fell back, e.g. no model reachable
+             */
+            notice: string | null;
+        };
+        /** SearchResult */
+        SearchResult: {
+            ticket: components["schemas"]["TicketListItem"];
+            /**
+             * Why
+             * @description One line: why this ticket matched (§7.4)
+             */
+            why: string;
+            /**
+             * Matched By
+             * @description "full-text" and/or "similarity"
+             */
+            matched_by: string[];
+        };
+        /** SendMessageRequest */
+        SendMessageRequest: {
+            /** Text */
+            text: string;
+            /**
+             * Original
+             * @description The agent's note before polish (§7.3 step 4)
+             */
+            original?: string | null;
+            /**
+             * Internal Note
+             * @description Stored on the ticket, never sent
+             * @default false
+             */
+            internal_note: boolean;
+        };
+        /** SendMessageResponse */
+        SendMessageResponse: {
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Channel */
+            channel: string;
+            /**
+             * Queued
+             * @description False for an internal note, which is never delivered
+             */
+            queued: boolean;
+            /** Delivered */
+            delivered: boolean;
+            /**
+             * Simulated
+             * @description No adapter was running; the sink took it
+             * @default false
+             */
+            simulated: boolean;
+            /** Error */
+            error?: string | null;
+        };
+        /** ServiceOption */
+        ServiceOption: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /** SimulateBankAlertRequest */
+        SimulateBankAlertRequest: {
+            /**
+             * Utr
+             * @description The 12-digit UTR the customer submitted (or will)
+             */
+            utr: string;
+            /**
+             * Amount
+             * @description Rupees, e.g. "6199" or "6199.00"
+             */
+            amount: string;
+            /**
+             * Include Secret
+             * @description False shows a spoof being rejected (no BANK_SECRET)
+             * @default true
+             */
+            include_secret: boolean;
+            /**
+             * Sender
+             * @description Defaults to the first BANK_ALERT_FROM address
+             */
+            sender?: string | null;
+        };
+        /** SimulateBankAlertResponse */
+        SimulateBankAlertResponse: {
+            /** Bank Alert Id */
+            bank_alert_id: string | null;
+            /** Duplicate */
+            duplicate: boolean;
+            /** Parsed Ok */
+            parsed_ok: boolean;
+            /** Reject Reason */
+            reject_reason: string | null;
+            /** Utr */
+            utr: string | null;
+            /** Amount */
+            amount: string | null;
+            /**
+             * Match
+             * @description paid | amount_mismatch | waiting_for_utr | duplicate | not_verifying
+             */
+            match: string | null;
+            /** Payment Id */
+            payment_id: string | null;
+            /** Invoice Number */
+            invoice_number: string | null;
+            /** Sender */
+            sender: string;
+            /**
+             * Sms
+             * @description The forwarded text that was parsed, with BANK_SECRET masked
+             */
+            sms: string;
+        };
+        /**
+         * SimulateRequest
+         * @description One made-up inbound message.
+         */
+        SimulateRequest: {
+            /** Text */
+            text: string;
+            /**
+             * Channel
+             * @default web
+             * @enum {string}
+             */
+            channel: "discord" | "telegram" | "email" | "web";
+            /**
+             * External User Id
+             * @description Defaults to "sim-<channel>", so repeat calls continue one conversation
+             */
+            external_user_id?: string | null;
+            /**
+             * External Thread Id
+             * @description Defaults to external_user_id
+             */
+            external_thread_id?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /**
+             * Email
+             * @description What the web pre-chat form or an email From gives
+             */
+            email?: string | null;
+        };
+        /** SimulateResponse */
+        SimulateResponse: {
+            /** Channel */
+            channel: string;
+            /** External User Id */
+            external_user_id: string;
+            /** External Thread Id */
+            external_thread_id: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /** Outcome */
+            outcome: string;
+            /** Reply */
+            reply: string;
+            /** Awaiting */
+            awaiting: string | null;
+            /** Ticket Id */
+            ticket_id: string | null;
+            /** Ticket Number */
+            ticket_number: string | null;
+            /** Flags */
+            flags: string[];
+            /**
+             * Duplicate Count
+             * @description §7.2: follow-ups on the ticket after this message
+             */
+            duplicate_count: number;
+            /** Priority */
+            priority?: string | null;
+            /**
+             * Priority Raised
+             * @default false
+             */
+            priority_raised: boolean;
+            /**
+             * Similarity
+             * @description Cosine similarity to the matched ticket
+             */
+            similarity?: number | null;
+            /** Intent */
+            intent: string | null;
+            /** Category */
+            category: string | null;
+            /** Issue Type */
+            issue_type: string | null;
+            /** Urgency */
+            urgency: string | null;
+            /** Serial Number */
+            serial_number: string | null;
+            /** Ai Summary */
+            ai_summary: string | null;
+            /** Diagnostic Steps */
+            diagnostic_steps: string[];
+            /**
+             * Model
+             * @description "<provider>:<model>", as written to ai_runs
+             */
+            model: string | null;
+            /** Llm Available */
+            llm_available: boolean;
+            /** Tool Calls */
+            tool_calls: {
+                [key: string]: unknown;
+            }[];
+            /** Intake Ms */
+            intake_ms: number;
+            /** Deliveries */
+            deliveries: components["schemas"]["SimulatedDelivery"][];
+            /** Adapters Running */
+            adapters_running: string[];
+            /**
+             * Payment
+             * @description The payment link /payments' handoff created from this message (§7.6)
+             */
+            payment?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * SimulatedDelivery
+         * @description What became of a reply intake queued on the outbox.
+         */
+        SimulatedDelivery: {
+            /** Channel */
+            channel: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Text */
+            text: string;
+            /** Ok */
+            ok: boolean;
+            /**
+             * Simulated
+             * @description True when nothing was listening and the sink took it
+             */
+            simulated: boolean;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            /** External Message Id */
+            external_message_id?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** StaffUserOut */
+        StaffUserOut: {
             /**
              * Id
              * Format: uuid
@@ -433,31 +2231,124 @@ export interface components {
              * @enum {string}
              */
             role: "agent" | "technician" | "warehouse" | "admin";
-            /** City */
-            city: string | null;
-            /** Skills */
-            skills: string[];
-            /** Is Available */
-            is_available: boolean;
             /** Avatar Url */
             avatar_url: string | null;
         };
-        /** TicketList */
-        TicketList: {
-            /** Tickets */
-            tickets: components["schemas"]["TicketRow"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
+        /**
+         * StockItem
+         * @description One part in one warehouse. available = on_hand - reserved (§5.7).
+         */
+        StockItem: {
+            /**
+             * Part Id
+             * Format: uuid
+             */
+            part_id: string;
+            /** Sku */
+            sku: string;
+            /** Name */
+            name: string;
+            /** Part Type */
+            part_type: string;
+            /**
+             * Unit Price
+             * @description Two decimals, e.g. "5.40"
+             */
+            unit_price: string;
+            /**
+             * Warehouse Id
+             * Format: uuid
+             */
+            warehouse_id: string;
+            /** Warehouse Name */
+            warehouse_name: string;
+            /** Warehouse City */
+            warehouse_city: string;
+            /** On Hand */
+            on_hand: number;
+            /** Reserved */
+            reserved: number;
+            /** Available */
+            available: number;
+            /** Reorder Threshold */
+            reorder_threshold: number;
+            /** Reorder Qty */
+            reorder_qty: number;
+            /**
+             * Low
+             * @description available <= reorder_threshold (§7.8)
+             */
+            low: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @description The open or ordered restock request for this part, if any */
+            restock: components["schemas"]["RestockRef"] | null;
         };
         /**
-         * TicketRow
-         * @description One inbox row (§11.3).
+         * SuggestionChip
+         * @description One suggested action (§7.5): clicking it runs /name with args, or fills the composer.
          */
-        TicketRow: {
+        SuggestionChip: {
+            /** Name */
+            name: string;
+            /** Args */
+            args: string;
+            /** Label */
+            label: string;
+            /**
+             * Needs Args
+             * @description True: put "/name " in the composer for the agent's words instead of running
+             */
+            needs_args: boolean;
+        };
+        /** SuggestionsResponse */
+        SuggestionsResponse: {
+            /**
+             * Ticket Id
+             * Format: uuid
+             */
+            ticket_id: string;
+            /** Chips */
+            chips: components["schemas"]["SuggestionChip"][];
+            /**
+             * Source
+             * @description ai: ranked by the decision model; rules: the code's order
+             * @enum {string}
+             */
+            source: "ai" | "rules";
+            /** Cached */
+            cached: boolean;
+        };
+        /** TicketAgent */
+        TicketAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** TicketCustomer */
+        TicketCustomer: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string | null;
+            /** Email */
+            email: string | null;
+        };
+        /**
+         * TicketDetail
+         * @description The full ticket behind /tickets/[id] (§11.2).
+         */
+        TicketDetail: {
             /**
              * Id
              * Format: uuid
@@ -467,6 +2358,8 @@ export interface components {
             ticket_number: string;
             /** Title */
             title: string;
+            /** Ai Summary */
+            ai_summary: string | null;
             /**
              * Status
              * @enum {string}
@@ -489,18 +2382,15 @@ export interface components {
              * @enum {string}
              */
             source_channel: "discord" | "telegram" | "email" | "web";
-            /** Channels */
+            /**
+             * Channels
+             * @description Every platform the conversation has touched, source channel first (§6.3, §11.3)
+             */
             channels: ("discord" | "telegram" | "email" | "web")[];
-            customer: components["schemas"]["RowCustomer"];
-            device: components["schemas"]["RowDevice"] | null;
-            /** Ai Summary */
-            ai_summary: string | null;
-            /** Duplicate Count */
-            duplicate_count: number;
             /** Flags */
             flags: string[];
-            /** Assigned Agent Id */
-            assigned_agent_id: string | null;
+            /** Duplicate Count */
+            duplicate_count: number;
             /**
              * Created At
              * Format: date-time
@@ -511,9 +2401,241 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            customer: components["schemas"]["TicketCustomer"] | null;
+            product: components["schemas"]["TicketProduct"] | null;
+            assigned_agent: components["schemas"]["TicketAgent"] | null;
+            /** Description */
+            description: string;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** Diagnostic Steps */
+            diagnostic_steps: components["schemas"]["DiagnosticStepOut"][];
+            payment: components["schemas"]["TicketPaymentOut"] | null;
+            /** @description The ticket's latest technician job (§7.7) */
+            job: components["schemas"]["JobOut"] | null;
         };
-        /** TicketTimeline */
-        TicketTimeline: {
+        /**
+         * TicketListItem
+         * @description One row of the inbox list pane (§11.2).
+         */
+        TicketListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ticket Number */
+            ticket_number: string;
+            /** Title */
+            title: string;
+            /** Ai Summary */
+            ai_summary: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed";
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "medium" | "high" | "urgent";
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "hardware" | "software" | "unknown";
+            /** Issue Type */
+            issue_type: string;
+            /**
+             * Source Channel
+             * @enum {string}
+             */
+            source_channel: "discord" | "telegram" | "email" | "web";
+            /**
+             * Channels
+             * @description Every platform the conversation has touched, source channel first (§6.3, §11.3)
+             */
+            channels: ("discord" | "telegram" | "email" | "web")[];
+            /** Flags */
+            flags: string[];
+            /** Duplicate Count */
+            duplicate_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            customer: components["schemas"]["TicketCustomer"] | null;
+            product: components["schemas"]["TicketProduct"] | null;
+            assigned_agent: components["schemas"]["TicketAgent"] | null;
+        };
+        /** TicketListResponse */
+        TicketListResponse: {
+            /** Tickets */
+            tickets: components["schemas"]["TicketListItem"][];
+            /**
+             * Total
+             * @description Matching tickets before limit and offset
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * TicketPatch
+         * @description Only the three fields §10 allows; anything omitted is left alone.
+         */
+        TicketPatch: {
+            /** Status */
+            status?: ("new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed") | null;
+            /** Priority */
+            priority?: ("low" | "medium" | "high" | "urgent") | null;
+            /** Assigned Agent Id */
+            assigned_agent_id?: string | null;
+            /**
+             * Unassign
+             * @description Clear the assignee (assigned_agent_id is ignored)
+             * @default false
+             */
+            unassign: boolean;
+            /**
+             * Note
+             * @description Recorded on the timeline
+             */
+            note?: string | null;
+        };
+        /**
+         * TicketPaymentOut
+         * @description The ticket's latest payment, for the right rail (§7.6).
+         */
+        TicketPaymentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Service Code */
+            service_code: string;
+            /** Amount */
+            amount: number;
+            /** Currency */
+            currency: string;
+            /** Status */
+            status: string;
+            /** Public Token */
+            public_token: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Invoice Number */
+            invoice_number?: string | null;
+            /** Utr */
+            utr?: string | null;
+            /** Utr Submitted At */
+            utr_submitted_at?: string | null;
+            /**
+             * Verified By
+             * @description 'bank_alert', or the admin who marked it paid
+             */
+            verified_by?: string | null;
+            /** Verified At */
+            verified_at?: string | null;
+            /**
+             * Needs Review
+             * @description Staff should check it: the UTR waited too long for its bank alert, or the alert's amount differed (§7.6)
+             * @default false
+             */
+            needs_review: boolean;
+        };
+        /** TicketProduct */
+        TicketProduct: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Serial Number */
+            serial_number: string;
+            /** Model Number */
+            model_number: string;
+            /** Model Name */
+            model_name: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "laptop" | "desktop" | "headphones" | "accessory";
+            /** Color */
+            color: string | null;
+            /** Warranty Until */
+            warranty_until: string | null;
+        };
+        /**
+         * TimelineEntry
+         * @description One row of the unified timeline: a message or a ticket event (§10).
+         */
+        TimelineEntry: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "message" | "event";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Channel
+             * @description Which platform it came from or went to
+             */
+            channel?: string | null;
+            /** Sender Type */
+            sender_type?: ("customer" | "agent" | "ai" | "technician" | "system") | null;
+            /** Sender Name */
+            sender_name?: string | null;
+            /** Body */
+            body?: string | null;
+            /**
+             * Body Original
+             * @description The agent's note before polish
+             */
+            body_original?: string | null;
+            /**
+             * Is Internal Note
+             * @default false
+             */
+            is_internal_note: boolean;
+            /** External Message Id */
+            external_message_id?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Actor */
+            actor?: string | null;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** TimelineResponse */
+        TimelineResponse: {
             /**
              * Ticket Id
              * Format: uuid
@@ -521,56 +2643,39 @@ export interface components {
             ticket_id: string;
             /** Ticket Number */
             ticket_number: string;
-            /** Messages */
-            messages: components["schemas"]["TimelineMessage"][];
+            /**
+             * Channels
+             * @description Every channel this ticket has been touched on (§6.3)
+             */
+            channels: string[];
+            /** Entries */
+            entries: components["schemas"]["TimelineEntry"][];
         };
-        /**
-         * TimelineMessage
-         * @description One message of a ticket's conversation, in the shape of ConversationMessage in
-         *     web/src/components/inbox/data.ts.
-         */
-        TimelineMessage: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Sender Type
-             * @enum {string}
-             */
-            sender_type: "customer" | "ai" | "agent";
-            /** Author */
-            author: string | null;
-            /**
-             * Channel
-             * @enum {string}
-             */
-            channel: "discord" | "telegram" | "email" | "web";
-            /** Body */
-            body: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
+        /** UsageByType */
+        UsageByType: {
+            /** Part Type */
+            part_type: string;
+            /** Used */
+            used: number;
         };
-        /** TokenOut */
-        TokenOut: {
-            /** Access Token */
-            access_token: string;
+        /** UtrIn */
+        UtrIn: {
             /**
-             * Token Type
-             * @default bearer
-             * @constant
+             * Utr
+             * @description The 12-digit UTR / UPI reference number from the payment app
              */
-            token_type: "bearer";
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-            staff: components["schemas"]["StaffOut"];
+            utr: string;
+        };
+        /** UtrOut */
+        UtrOut: {
+            /** Ok */
+            ok: boolean;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string;
+            /** Utr Attempts Left */
+            utr_attempts_left: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -612,15 +2717,6 @@ export interface operations {
                     "application/json": components["schemas"]["HealthOut"];
                 };
             };
-            /** @description The database is unreachable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthOut"];
-                };
-            };
         };
     };
     login_api_auth_login_post: {
@@ -632,7 +2728,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LoginIn"];
+                "application/json": components["schemas"]["LoginRequest"];
             };
         };
         responses: {
@@ -642,15 +2738,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenOut"];
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
-            };
-            /** @description Wrong email or password. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -660,13 +2749,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-            /** @description JWT_SECRET is not set */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -685,28 +2767,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StaffOut"];
+                    "application/json": components["schemas"]["StaffUserOut"];
                 };
-            };
-            /** @description Sign in again. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
     list_tickets_api_tickets_get: {
         parameters: {
             query?: {
-                /** @description A status, or open: not resolved or closed */
-                status?: ("new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed") | "open" | null;
-                priority?: ("low" | "medium" | "high" | "urgent") | null;
-                /** @description Tickets whose conversation crossed this channel */
-                channel?: ("discord" | "telegram" | "email" | "web") | null;
-                category?: ("hardware" | "software" | "unknown") | null;
-                assignee?: string | ("me" | "unassigned") | null;
+                /** @description Repeat to match any */
+                status?: ("new" | "in_progress" | "awaiting_customer" | "awaiting_payment" | "scheduled" | "resolved" | "closed")[] | null;
+                priority?: ("low" | "medium" | "high" | "urgent")[] | null;
+                channel?: ("discord" | "telegram" | "email" | "web")[] | null;
+                category?: ("hardware" | "software" | "unknown")[] | null;
+                /** @description A staff user id, "me", or "unassigned" */
+                assignee?: string | null;
+                /** @description Hide resolved and closed */
+                open_only?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -722,22 +2799,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TicketList"];
+                    "application/json": components["schemas"]["TicketListResponse"];
                 };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -750,7 +2813,7 @@ export interface operations {
             };
         };
     };
-    ticket_timeline_api_tickets__ticket_id__timeline_get: {
+    get_ticket_api_tickets__ticket_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -767,24 +2830,603 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TicketTimeline"];
+                    "application/json": components["schemas"]["TicketDetail"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_ticket_api_tickets__ticket_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Forbidden */
+            /** @description Not an agent or admin */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Not Found */
+            /** @description No such ticket */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An open job or a payment being verified */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_ticket_api_tickets__ticket_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_timeline_api_tickets__ticket_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    polish_reply_api_tickets__ticket_id__polish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolishResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_api_tickets__ticket_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_diagnostic_api_tickets__ticket_id__diagnostics__step_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+                step_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnosticPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticStepOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_payment_paid_api_payments__payment_id__mark_paid_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkPaidRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkPaidResponse"];
+                };
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such payment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already paid, cancelled or refunded */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No note */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payments unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    run_ticket_command_api_tickets__ticket_id__commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_commands_api_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandListResponse"];
+                };
+            };
+        };
+    };
+    create_command_api_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_command_api_commands__command_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_command_api_commands__command_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticket_suggestions_api_tickets__ticket_id__suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_tickets_api_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Tickets server down */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    copilot_api_copilot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopilotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_jobs_api_jobs_mine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobListResponse"];
+                };
+            };
+        };
+    };
+    get_job_api_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Not your job */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such job */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -802,7 +3444,669 @@ export interface operations {
             };
         };
     };
-    internal_event_internal_events_post: {
+    patch_job_api_jobs__job_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Not your job, or an admin doing anything but cancel */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a forward move, or the job is closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Dispatch unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reject_job_api_jobs__job_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobReject"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRejected"];
+                };
+            };
+            /** @description Not the job's technician */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such job */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The job isn't assigned any more */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No reason, or too short */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Dispatch unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    inventory_api_inventory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InventoryResponse"];
+                };
+            };
+        };
+    };
+    restock_requests_api_restock_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestockRequestList"];
+                };
+            };
+        };
+    };
+    list_payments_api_payments_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                needs_review?: boolean | null;
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Payments unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_payment_api_payments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentCreated"];
+                };
+            };
+            /** @description No such ticket */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No address on file, an open payment, free, ... */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No note, or an unknown service */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payments unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_payment_api_payments__payment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentDetail"];
+                };
+            };
+            /** @description No such payment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_payment_api_payments__payment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRow"];
+                };
+            };
+            /** @description No such payment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Paid, cancelled, used UTR, out of attempts, ... */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No note, nothing to change, or not a 12-digit UTR */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_bank_alerts_api_bank_alerts_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAlertList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_bank_alert_api_bank_alerts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankAlertCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAlertResult"];
+                };
+            };
+            /** @description No note, or no SMS */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reject_payment_api_payments__payment_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentNote"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRow"];
+                };
+            };
+            /** @description No such payment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not verifying */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No note */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_payment_api_payments__payment_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentNote"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRow"];
+                };
+            };
+            /** @description No such payment */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Paid, refunded, or already closed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No note */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_invoice_api_pay__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayInvoice"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_utr_api_pay__token__utr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UtrIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UtrOut"];
+                };
+            };
+            /** @description Not a payment link */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Paid, cancelled, or the UTR is used */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The link expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not a 12-digit UTR */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many attempts or requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payments unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_status_api_pay__token__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chat_session_api_chat_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_event_internal_events_post: {
         parameters: {
             query?: never;
             header?: {
@@ -823,15 +4127,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StaffEvent"];
+                    "application/json": components["schemas"]["Event"];
                 };
-            };
-            /** @description Wrong or missing X-Internal-Key */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -841,13 +4138,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
-            };
-            /** @description INTERNAL_API_KEY is not set */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -860,7 +4150,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SimulateIn"];
+                "application/json": components["schemas"]["SimulateRequest"];
             };
         };
         responses: {
@@ -870,29 +4160,50 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SimulateOut"];
+                    "application/json": components["schemas"]["SimulateResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not in development */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unprocessable Entity */
+            /** @description Validation Error */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_bank_alert_api_dev_simulate_bank_alert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulateBankAlertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulateBankAlertResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -911,54 +4222,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DevChannels"];
+                    "application/json": components["schemas"]["ChannelsResponse"];
                 };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not in development */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
-    create_chat_session_api_chat_session_post: {
+    reset_demo_api_dev_reset_demo_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatSessionIn"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatSessionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ResetDemoResponse"];
                 };
             };
         };

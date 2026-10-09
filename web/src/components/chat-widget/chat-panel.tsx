@@ -1,305 +1,327 @@
 "use client";
 
-import { AlertCircle, ArrowUp, Check, CheckCheck, LoaderCircle, RotateCcw, Ticket } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-  type KeyboardEvent,
-} from "react";
+// The website chat (§6.2, §11.4): a short pre-chat form (name + email, no account), then the conversation
+// over WS /ws/chat/{session_id}. Every message runs the customer intake pipeline on the backend, which can
+// only reach the catalog, tickets, knowledge and messaging tools (§4.1): never payments, dispatch or stock.
+//
+// The session id is kept in this browser (localStorage, best effort) so a reload resumes the same
+// conversation. A reply that hasn't come 45 s after the server confirmed a message shows the §15 note,
+// so the customer is never left looking at silence.
 
-import { BrandMark, COMPANY_NAME } from "@/components/brand";
-import {
-  clearChat,
-  loadChat,
-  saveChat,
-  useChat,
-  type ChatMessage,
-  type ChatSession,
-} from "@/components/chat-widget/use-chat";
+import { CircleAlert, LoaderCircle, Send, Ticket } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/input";
-import { ApiError, api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { env } from "@/lib/env";
 
-const MAX_TEXT = 4000;
-const noopSubscribe = () => () => {};
+type Line = { id: string; sender: "customer" | "ai" | "note"; text: string; status?: "sending" | "sent" };
+type Stored = { sessionId: string; wsPath: string; name: string; greeting: string; ticket?: string };
+type ServerEvent =
+  | { type: "ready"; session_id: string }
+  | { type: "message"; sender: "customer" | "ai"; text: string; at: string }
+  | { type: "typing" }
+  | { type: "ticket"; ticket_number: string; ticket_id: string }
+  | { type: "error"; detail: string };
 
-/** The website chat (§11.4): pre-chat form, then the conversation. */
-export function ChatPanel({ className }: { className?: string }) {
-  // The stored session is only known in the browser.
-  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  const [session, setSession] = useState<ChatSession | null | undefined>(undefined);
-  const [ended, setEnded] = useState(false);
-  // Read once: a new object each render would reconnect the socket each render.
-  const stored = useMemo(() => (hydrated ? loadChat() : null), [hydrated]);
-  const current = session === undefined ? stored : session;
+const STORAGE_KEY = "support-chat-session";
+const SILENCE_MS = 45_000;
+// §15: what the customer sees if no reply arrives (the backend sends the same words when intake fails).
+const SILENCE_NOTE = "We've received your message and an agent will follow up shortly.";
+const MAX_RECONNECTS = 5;
 
-  const onGone = useCallback(() => {
-    clearChat();
-    setEnded(true);
-    setSession(null);
-  }, []);
-
-  function start(next: ChatSession) {
-    saveChat(next);
-    setEnded(false);
-    setSession(next);
+function load(): Stored | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Stored) : null;
+  } catch {
+    return null;
   }
+}
 
-  function newChat() {
-    clearChat();
-    setEnded(false);
-    setSession(null);
+function save(value: Stored | null) {
+  try {
+    if (value) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    else window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Private mode or blocked storage: the chat still works, it just won't survive a reload.
   }
+}
 
+let counter = 0;
+const nextId = () => `l${++counter}`;
+const noop = () => () => {};
+
+export function ChatPanel() {
+  // The saved session lives in this browser only, so the server renders the loading shell.
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  if (!mounted) {
+    return <Shell><p className="p-6 text-subheadline text-ink-secondary">Loading the chat…</p></Shell>;
+  }
+  return <ChatInBrowser />;
+}
+
+function ChatInBrowser() {
+  const [session, setSession] = useState<Stored | null>(load);
+  return session ? (
+    <Conversation
+      session={session}
+      onTicket={(ticket) => {
+        const updated = { ...session, ticket };
+        save(updated);
+        setSession(updated);
+      }}
+      onEnd={() => {
+        save(null);
+        setSession(null);
+      }}
+    />
+  ) : (
+    <PreChatForm
+      onStarted={(started) => {
+        save(started);
+        setSession(started);
+      }}
+    />
+  );
+}
+
+function Shell({ children, header }: { children: React.ReactNode; header?: React.ReactNode }) {
   return (
     <section
       aria-label="Chat with support"
-      className={cn("flex min-h-0 flex-col overflow-hidden rounded-panel bg-surface", className)}
+      className="flex h-[min(640px,calc(100dvh-140px))] min-h-[460px] flex-col overflow-hidden rounded-panel bg-surface shadow-raised"
     >
-      {!hydrated ? null : current ? (
-        <Conversation session={current} onGone={onGone} onNewChat={newChat} />
-      ) : (
-        <PreChat onStart={start} ended={ended} />
-      )}
+      <div className="flex items-center gap-3 border-b border-hairline px-4 py-3">
+        <span className="size-2 rounded-full bg-success" aria-hidden />
+        <p className="flex-1 text-subheadline font-semibold text-ink">Chat with {env.companyName} support</p>
+        {header}
+      </div>
+      {children}
     </section>
   );
 }
 
-// ---------- pre-chat form ----------
-
-function PreChat({ onStart, ended }: { onStart: (s: ChatSession) => void; ended: boolean }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
+function PreChatForm({ onStarted }: { onStarted: (session: Stored) => void }) {
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name")).trim();
+    setPending(true);
     setError(null);
     try {
-      const opened = await api<ChatSession>("/api/chat/session", {
+      const res = await fetch(`${env.apiUrl}/api/chat/session`, {
         method: "POST",
-        body: { name: name.trim(), email: email.trim() },
-        auth: false,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email: String(form.get("email")).trim() }),
       });
-      onStart(opened);
-    } catch (caught) {
-      setError(
-        caught instanceof ApiError && caught.status === 422
-          ? "Check your name and email address."
-          : caught instanceof ApiError
-            ? caught.message
-            : "Something went wrong. Try again.",
-      );
-      setBusy(false);
+      if (!res.ok) {
+        setError(res.status === 422 ? "Check your name and email address." : "We couldn't start the chat. Try again.");
+        setPending(false);
+        return;
+      }
+      const body = (await res.json()) as { session_id: string; ws_path: string; greeting: string };
+      onStarted({ sessionId: body.session_id, wsPath: body.ws_path, name, greeting: body.greeting });
+    } catch {
+      setError("We couldn't reach support. Check your connection and try again.");
+      setPending(false);
     }
   }
 
   return (
-    <div className="flex flex-1 flex-col px-5 pt-6 pb-8 sm:mx-auto sm:w-full sm:max-w-md sm:justify-center sm:px-8">
-      <BrandMark className="size-12" />
-      <h2 className="mt-4 text-title-2 font-semibold">Chat with support</h2>
-      <p className="mt-1 text-subheadline text-pretty text-ink-secondary">
-        {ended
-          ? "That chat has ended. Start a new one and we'll pick up from here."
-          : "Tell us who you are and what's wrong. No account needed."}
-      </p>
-      <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
-        <div>
-          <Label htmlFor="chat-name">Name</Label>
-          <Input id="chat-name" autoComplete="name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="chat-email">Email</Label>
-          <Input
-            id="chat-email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-          />
-          <p className="mt-1.5 text-footnote text-ink-secondary">So we can link your devices and reach you about this ticket.</p>
-        </div>
-        <div aria-live="polite">
-          {error && (
-            <p className="flex items-start gap-2 text-subheadline text-danger">
-              <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              {error}
-            </p>
-          )}
-        </div>
-        <Button type="submit" className="w-full" disabled={busy || !name.trim() || !email.trim()}>
-          {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
-          {busy ? "Starting" : "Start chat"}
-        </Button>
-      </form>
-    </div>
-  );
-}
-
-// ---------- the conversation ----------
-
-function Conversation({ session, onGone, onNewChat }: { session: ChatSession; onGone: () => void; onNewChat: () => void }) {
-  const { messages, typing, ticketNumber, connection, notice, send } = useChat(session, onGone);
-  const [text, setText] = useState("");
-  const log = useRef<HTMLOListElement>(null);
-  const box = useRef<HTMLTextAreaElement>(null);
-
-  // Keep the newest message in view.
-  useLayoutEffect(() => {
-    const el = log.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, typing]);
-
-  // The textarea grows with its text, up to about five lines.
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }, [text]);
-
-  function submit(event?: FormEvent) {
-    event?.preventDefault();
-    const body = text.trim();
-    if (!body || body.length > MAX_TEXT) return;
-    send(body);
-    setText("");
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      submit();
-    }
-    // With a draft, Escape keeps the page (Escape otherwise goes home, §11.2).
-    if (event.key === "Escape" && text) event.preventDefault();
-  }
-
-  const lastCustomer = [...messages].reverse().find((m) => m.sender === "customer" && !m.local);
-
-  return (
-    <>
-      <header className="flex items-center gap-3 border-b border-hairline px-4 py-3 sm:px-5">
-        <BrandMark className="size-9" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold">{COMPANY_NAME} support</p>
-          <p className="flex items-center gap-1.5 text-footnote text-ink-secondary" aria-live="polite">
-            <span
-              aria-hidden="true"
-              className={cn("size-1.5 rounded-full", connection === "open" ? "bg-success" : "bg-warning")}
-            />
-            {connection === "open" ? "Online" : connection === "connecting" ? "Connecting" : "Reconnecting"}
+    <Shell>
+      <form onSubmit={onSubmit} className="flex flex-1 flex-col justify-center gap-5 p-6">
+        <div className="space-y-1">
+          <h2 className="text-title-2 font-semibold tracking-tight text-ink">Start a chat</h2>
+          <p className="text-subheadline text-ink-secondary">
+            No account needed. We use your email to link your tickets and send updates.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onNewChat} aria-label="New chat" title="New chat">
-          <RotateCcw aria-hidden="true" />
-          <span className="hidden sm:inline">New chat</span>
-        </Button>
-      </header>
-
-      {ticketNumber && (
-        <p className="flex items-center gap-2 border-b border-hairline bg-accent/5 px-4 py-2.5 text-subheadline sm:px-5">
-          <Ticket aria-hidden="true" className="size-4 shrink-0 text-accent" />
-          <span>
-            Ticket <span className="font-semibold tabular-nums">{ticketNumber}</span>
-            <span className="text-ink-secondary"> · we&apos;ll keep you posted here</span>
-          </span>
-        </p>
-      )}
-
-      <ol ref={log} role="log" aria-label="Messages" aria-live="polite" className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-4 sm:px-5">
-        {messages.length === 0 && (
-          <li className="py-8 text-center text-subheadline text-pretty text-ink-secondary">
-            Hi {session.name.split(" ")[0]}. What&apos;s wrong with your device? If you have the serial number handy, include it.
-          </li>
-        )}
-        {messages.map((message) => (
-          <Bubble key={message.key} message={message} showStatus={message === lastCustomer} />
-        ))}
-        {typing && (
-          <li aria-label="Support is typing" className="flex">
-            <span className="inline-flex items-center gap-1 rounded-panel rounded-bl-control bg-canvas px-4 py-3.5">
-              {[0, 150, 300].map((delay) => (
-                <span
-                  key={delay}
-                  className="size-1.5 animate-bounce rounded-full bg-ink-secondary"
-                  style={{ animationDelay: `${delay}ms` }}
-                />
-              ))}
-            </span>
-          </li>
-        )}
-      </ol>
-
-      {notice && <p className="px-5 pb-1 text-footnote text-danger">{notice}</p>}
-
-      <form onSubmit={submit} className="flex items-end gap-2 border-t border-hairline p-3">
-        <label htmlFor="chat-text" className="sr-only">Message</label>
-        <textarea
-          id="chat-text"
-          ref={box}
-          rows={1}
-          value={text}
-          maxLength={MAX_TEXT}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Message"
-          className="min-h-11 w-full min-w-0 flex-1 resize-none rounded-panel bg-canvas px-4 py-2.5 text-body text-ink placeholder:text-ink-secondary focus:ring-2 focus:ring-accent focus:outline-none focus-visible:outline-none"
-        />
-        <Button type="submit" size="icon" aria-label="Send" disabled={!text.trim()} className="size-11">
-          <ArrowUp aria-hidden="true" className="size-5!" />
+        <div className="space-y-2">
+          <Label htmlFor="chat-name" className="text-subheadline">Your name</Label>
+          <Input id="chat-name" name="name" required maxLength={120} autoComplete="name" className="h-11 rounded-control text-body" />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="chat-email" className="text-subheadline">Email</Label>
+          <Input id="chat-email" name="email" type="email" required autoComplete="email" className="h-11 rounded-control text-body" />
+        </div>
+        {error ? <p role="alert" className="text-subheadline text-danger">{error}</p> : null}
+        <Button type="submit" disabled={pending} className="h-11 rounded-control text-[17px]">
+          {pending ? "Starting…" : "Start chat"}
         </Button>
       </form>
-    </>
+    </Shell>
   );
 }
 
-function Bubble({ message, showStatus }: { message: ChatMessage; showStatus: boolean }) {
-  const mine = message.sender === "customer";
+function Conversation({ session, onTicket, onEnd }: {
+  session: Stored; onTicket: (ticket: string) => void; onEnd: () => void;
+}) {
+  const [lines, setLines] = useState<Line[]>([{ id: "greeting", sender: "ai", text: session.greeting }]);
+  const [state, setState] = useState<"connecting" | "open" | "reconnecting" | "lost">("connecting");
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState("");
+  const socket = useRef<WebSocket | null>(null);
+  const silence = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const end = useRef<HTMLDivElement>(null);
+  // The callbacks change on every parent render; the socket must not reconnect because of that.
+  const handlers = useRef({ onTicket, onEnd });
+  useEffect(() => {
+    handlers.current = { onTicket, onEnd };
+  }, [onTicket, onEnd]);
+
+  const clearSilence = () => {
+    if (silence.current) clearTimeout(silence.current);
+    silence.current = null;
+  };
+
+  const reconnect = useRef<(attempt: number) => void>(() => {});
+  const connect = useCallback((attempt: number) => {
+    const ws = new WebSocket(`${env.wsUrl}${session.wsPath}`);
+    socket.current = ws;
+    let opened = false;
+    ws.onopen = () => {
+      opened = true;
+      setState("open");
+    };
+    ws.onmessage = (raw) => {
+      let event: ServerEvent;
+      try {
+        event = JSON.parse(String(raw.data)) as ServerEvent;
+      } catch {
+        return;
+      }
+      if (event.type === "typing") setTyping(true);
+      else if (event.type === "ticket") handlers.current.onTicket(event.ticket_number);
+      else if (event.type === "error") setLines((ls) => [...ls, { id: nextId(), sender: "note", text: event.detail }]);
+      else if (event.type === "message" && event.sender === "customer") {
+        // The server's echo confirms our message: mark the oldest one still sending as sent.
+        setLines((ls) => {
+          const i = ls.findIndex((l) => l.sender === "customer" && l.status === "sending" && l.text === event.text);
+          if (i === -1) return [...ls, { id: nextId(), sender: "customer", text: event.text, status: "sent" }];
+          return ls.map((l, j) => (j === i ? { ...l, status: "sent" } : l));
+        });
+        clearSilence();
+        silence.current = setTimeout(() => {
+          setTyping(false);
+          setLines((ls) => [...ls, { id: nextId(), sender: "note", text: SILENCE_NOTE }]);
+        }, SILENCE_MS);
+      } else if (event.type === "message") {
+        clearSilence();
+        setTyping(false);
+        setLines((ls) => [...ls, { id: nextId(), sender: "ai", text: event.text }]);
+      }
+    };
+    ws.onclose = (close) => {
+      if (socket.current !== ws) return; // replaced or unmounted
+      if (close.code === 1008) {
+        handlers.current.onEnd(); // the server doesn't know this session any more: start over
+        return;
+      }
+      if (attempt < MAX_RECONNECTS) {
+        setState("reconnecting");
+        setTimeout(() => reconnect.current(opened ? 0 : attempt + 1), Math.min(1000 * 2 ** attempt, 8000));
+      } else {
+        setState("lost");
+      }
+    };
+  }, [session.wsPath]);
+
+  useEffect(() => {
+    reconnect.current = connect;
+    connect(0);
+    return () => {
+      const ws = socket.current;
+      socket.current = null;
+      ws?.close();
+      clearSilence();
+    };
+  }, [connect]);
+
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [lines, typing]);
+
+  function send(event?: { preventDefault(): void }) {
+    event?.preventDefault();
+    const text = draft.trim();
+    if (!text || state !== "open" || !socket.current) return;
+    socket.current.send(JSON.stringify({ text }));
+    setLines((ls) => [...ls, { id: nextId(), sender: "customer", text, status: "sending" }]);
+    setDraft("");
+  }
+
   return (
-    <li className={cn("flex flex-col", mine ? "items-end" : "items-start")}>
-      <p
-        className={cn(
-          "max-w-[85%] rounded-panel px-4 py-2.5 text-subheadline whitespace-pre-wrap text-pretty",
-          mine ? "rounded-br-control bg-accent text-on-accent" : "rounded-bl-control bg-canvas text-ink",
-          message.status === "sending" && "opacity-70",
-        )}
-      >
-        {message.text}
-      </p>
-      {mine && message.status === "failed" && (
-        <span className="mt-1 flex items-center gap-1 px-1 text-footnote text-danger">
-          <AlertCircle aria-hidden="true" className="size-3.5" />
-          Not sent: {message.error}
-        </span>
-      )}
-      {mine && showStatus && message.status !== "failed" && (
-        <span className="mt-1 flex items-center gap-1 px-1 text-footnote text-ink-secondary">
-          {message.status === "sending" ? (
-            <>
-              <Check aria-hidden="true" className="size-3.5" />
-              Sending
-            </>
+    <Shell
+      header={
+        <button type="button" onClick={onEnd} className="rounded-control text-footnote text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent">
+          New chat
+        </button>
+      }
+    >
+      {session.ticket ? (
+        <div className="flex items-center gap-2 bg-accent/8 px-4 py-2 text-footnote text-ink">
+          <Ticket className="size-4 text-accent" aria-hidden />
+          Your ticket <span className="font-semibold tabular-nums">{session.ticket}</span>
+        </div>
+      ) : null}
+      <ol className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4" aria-live="polite">
+        {lines.map((line) =>
+          line.sender === "note" ? (
+            <li key={line.id} className="flex items-start gap-2 rounded-control bg-warning/10 px-3 py-2 text-footnote text-ink">
+              <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden /> {line.text}
+            </li>
           ) : (
-            <>
-              <CheckCheck aria-hidden="true" className="size-3.5 text-accent" />
-              Delivered
-            </>
+            <li key={line.id} className={`flex ${line.sender === "customer" ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[85%] space-y-0.5">
+                <p className={`whitespace-pre-wrap rounded-[18px] px-3.5 py-2 text-subheadline ${
+                  line.sender === "customer" ? "bg-accent text-on-accent" : "bg-canvas text-ink dark:bg-surface-raised"
+                }`}>
+                  {line.text}
+                </p>
+                {line.sender === "customer" ? (
+                  <p className="pr-1 text-right text-[11px] text-ink-secondary">{line.status === "sending" ? "Sending…" : "Delivered"}</p>
+                ) : null}
+              </div>
+            </li>
+          ),
+        )}
+        {typing ? (
+          <li className="flex items-center gap-2 text-footnote text-ink-secondary" role="status">
+            <LoaderCircle className="size-3.5 animate-spin" aria-hidden /> Support is typing…
+          </li>
+        ) : null}
+        <div ref={end} />
+      </ol>
+      {state !== "open" ? (
+        <p role="status" className="border-t border-hairline px-4 py-2 text-footnote text-ink-secondary">
+          {state === "connecting" ? "Connecting…" : state === "reconnecting" ? "Reconnecting…" : (
+            <>The connection was lost. <button type="button" className="text-accent hover:underline" onClick={() => { setState("reconnecting"); connect(0); }}>Try again</button></>
           )}
-        </span>
-      )}
-    </li>
+        </p>
+      ) : null}
+      <form onSubmit={send} className="flex items-end gap-2 border-t border-hairline p-3">
+        <label htmlFor="chat-input" className="sr-only">Your message</label>
+        <textarea
+          id="chat-input"
+          rows={1}
+          value={draft}
+          maxLength={4000}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) send(event);
+          }}
+          placeholder="Describe the problem, and your serial number if you have it"
+          className="max-h-32 min-h-10 flex-1 resize-none rounded-control bg-canvas px-3 py-2 text-subheadline text-ink outline-none placeholder:text-ink-secondary focus-visible:ring-2 focus-visible:ring-accent dark:bg-surface-raised"
+        />
+        <Button type="submit" disabled={!draft.trim() || state !== "open"} className="h-10 rounded-control text-[15px]" aria-label="Send">
+          <Send aria-hidden />
+        </Button>
+      </form>
+    </Shell>
   );
 }

@@ -1,0 +1,51 @@
+{
+  "_note": "Test prices (§8.2): parts are the real price ÷ 1000 and labour is ₹1.00-₹2.00, so every invoice is between ₹1 (UPI's minimum) and ₹20 and a real UPI payment costs a few rupees.",
+
+  "service_catalog": [
+    {"code": "BATTERY_REPLACE", "name": "Battery replacement", "part_type": "battery", "labour_fee": 1.50, "requires_visit": true, "required_skill": "battery"},
+    {"code": "CMOS_REPLACE", "name": "CMOS battery replacement", "part_type": "cmos_battery", "labour_fee": 1.00, "requires_visit": true, "required_skill": "cmos"},
+    {"code": "DISPLAY_REPLACE", "name": "Display replacement", "part_type": "display", "labour_fee": 2.00, "requires_visit": true, "required_skill": "display"},
+    {"code": "KEYBOARD_REPLACE", "name": "Keyboard replacement", "part_type": "keyboard", "labour_fee": 1.50, "requires_visit": true, "required_skill": "keyboard"},
+    {"code": "FAN_REPLACE", "name": "Cooling fan replacement", "part_type": "fan", "labour_fee": 1.50, "requires_visit": true, "required_skill": "fan"},
+    {"code": "SSD_REPLACE", "name": "SSD replacement", "part_type": "ssd", "labour_fee": 1.50, "requires_visit": true, "required_skill": "ssd"},
+    {"code": "SSD_UPGRADE", "name": "SSD upgrade", "part_type": "ssd", "labour_fee": 1.50, "requires_visit": true, "required_skill": "ssd"},
+    {"code": "RAM_UPGRADE", "name": "RAM upgrade", "part_type": "ram", "labour_fee": 1.00, "requires_visit": true, "required_skill": "ram"},
+    {"code": "CHARGER_REPLACE", "name": "Charger replacement (shipped)", "part_type": "charger", "labour_fee": 1.00, "requires_visit": false, "required_skill": null},
+    {"code": "OS_REINSTALL", "name": "OS reinstall", "part_type": null, "labour_fee": 2.00, "requires_visit": true, "required_skill": "os"},
+    {"code": "EAR_CUSHION_REPLACE", "name": "Ear cushion replacement (shipped)", "part_type": "ear_cushion", "labour_fee": 1.00, "requires_visit": false, "required_skill": null},
+    {"code": "UPI_TEST", "name": "UPI test payment", "part_type": null, "labour_fee": 1.00, "requires_visit": false, "required_skill": null}
+  ],
+
+  "warehouses": [
+    {"name": "Central warehouse", "city": "Bengaluru"}
+  ],
+
+  "inventory": {
+    "default_reorder_threshold": 5,
+    "default_reorder_qty": 20,
+    "random_qty_range": [8, 30],
+    "overrides": [
+      {"sku": "BAT-AX14", "warehouse": "Central warehouse", "qty_on_hand": 4, "reorder_threshold": 3,
+       "why": "One above its reorder threshold: booking the demo battery replacement reserves one, stock drops to 3, and the low-stock alert fires live; a second booking (3 -> 2) sends no second alert (§7.8)."}
+    ]
+  },
+
+  "staff": [
+    {"name": "Arjun Mehta", "email": "arjun.mehta@staff.example.com", "role": "agent"},
+    {"name": "Neha Kapoor", "email": "neha.kapoor@staff.example.com", "role": "agent"},
+    {"name": "Kabir Rao", "email": "kabir.rao@staff.example.com", "role": "admin"},
+
+    {"name": "Ravi Kumar", "email": "ravi.kumar@staff.example.com", "role": "technician", "phone": "+91 98860 41122",
+     "city": "Bengaluru", "skills": ["battery", "cmos", "display", "keyboard", "fan", "ssd", "ram", "os"]},
+    {"name": "Lakshmi Menon", "email": "lakshmi.menon@staff.example.com", "role": "technician", "phone": "+91 99001 27734",
+     "city": "Bengaluru", "skills": ["battery", "cmos", "display", "keyboard", "fan", "ssd", "ram"]},
+    {"name": "Imran Shaikh", "email": "imran.shaikh@staff.example.com", "role": "technician", "phone": "+91 98200 51907",
+     "city": "Mumbai", "skills": ["battery", "cmos", "display", "keyboard", "fan", "ssd", "ram", "os"]},
+    {"name": "Pooja Desai", "email": "pooja.desai@staff.example.com", "role": "technician", "phone": "+91 98190 66218",
+     "city": "Mumbai", "skills": ["battery", "cmos", "display", "keyboard", "fan"]},
+    {"name": "Vikram Singh", "email": "vikram.singh@staff.example.com", "role": "technician", "phone": "+91 98110 37745",
+     "city": "Delhi", "skills": ["battery", "cmos", "keyboard", "fan", "ssd", "ram", "os"]},
+    {"name": "Ananya Bose", "email": "ananya.bose@staff.example.com", "role": "technician", "phone": "+91 98990 28451",
+     "city": "Delhi", "skills": ["battery", "cmos", "display", "keyboard", "fan", "os"]}
+  ]
+}

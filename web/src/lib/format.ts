@@ -1,31 +1,65 @@
-/** Short relative times for lists: "now", "2m", "3h", "Yesterday", "12 Oct". */
-export function timeAgo(iso: string, now: number = Date.now()): string {
-  const then = Date.parse(iso);
-  const seconds = Math.max(0, Math.round((now - then) / 1000));
-  if (seconds < 45) return "now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  return new Date(then).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+// Labels and time formatting shared by the inbox row and the ticket page. Sentence case
+// throughout (§11.3): no all-caps labels, no eyebrow text.
+
+import type { SourceChannel, TicketPriority, TicketStatus } from "@/lib/api";
+
+export const STATUS_LABEL: Record<TicketStatus, string> = {
+  new: "New",
+  in_progress: "In progress",
+  awaiting_customer: "Awaiting customer",
+  awaiting_payment: "Awaiting payment",
+  scheduled: "Scheduled",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+export const PRIORITY_LABEL: Record<TicketPriority, string> = {
+  urgent: "Urgent",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+export const CHANNEL_LABEL: Record<SourceChannel | "internal", string> = {
+  web: "Web chat",
+  telegram: "Telegram",
+  discord: "Discord",
+  email: "Email",
+  internal: "Internal",
+};
+
+export const FLAG_LABEL: Record<string, string> = {
+  unverified_product: "Unverified device",
+  ownership_mismatch: "Ownership mismatch",
+  out_of_warranty: "Out of warranty",
+};
+
+const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["second", 60],
+  ["minute", 60],
+  ["hour", 24],
+  ["day", 7],
+  ["week", 4.345],
+  ["month", 12],
+];
+
+/** "2m ago", "yesterday": the narrow relative style the §11.3 row shows. */
+export function relative(iso: string): string {
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "narrow" });
+  let delta = (new Date(iso).getTime() - Date.now()) / 1000;
+  for (const [unit, span] of UNITS) {
+    if (Math.abs(delta) < span) return formatter.format(Math.round(delta), unit);
+    delta /= span;
+  }
+  return formatter.format(Math.round(delta), "year");
 }
 
-/** A full, readable time for titles and tooltips. */
-export function fullTime(iso: string): string {
+/** A full timestamp for the timeline's hover title and datetime attribute. */
+export function absolute(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** "In progress" from "in_progress": sentence case for enum values. */
-export function sentence(value: string): string {
-  const words = value.replace(/_/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-export function initials(name: string | null | undefined): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+/** "3 Oct 2026", for warranty dates. */
+export function dateOnly(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { dateStyle: "medium" });
 }

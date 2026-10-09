@@ -1,38 +1,32 @@
-import { cn } from "@/lib/utils";
+// The company's mark and name (§16.2: the working identity is NEXT_PUBLIC_COMPANY_NAME). The mark is four
+// dots on a white tile, two violet and two coral, one for each place a customer can reach us; it is also the
+// favicon (app/icon.svg).
 
-// NEXT_PUBLIC_* is baked in at build time (§13.3, §18.2).
-export const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || "Aurora Devices";
+import Link from "next/link";
 
-/** The company mark. Same drawing as src/app/icon.svg (the favicon and the PDF receipt's logo). */
-export function BrandMark({ className }: { className?: string }) {
+import { env } from "@/lib/env";
+
+export function LogoMark({ className = "size-9" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden="true" className={cn("size-7 shrink-0", className)}>
-      <rect width="32" height="32" rx="8" className="fill-accent" />
-      <path
-        d="M9.5 23.5 16 9l6.5 14.5"
-        fill="none"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="stroke-on-accent"
-      />
-      <path
-        d="M11.7 18.6Q16 15.6 20.3 18.6"
-        fill="none"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        className="stroke-on-accent"
-      />
+    <svg viewBox="0 0 32 32" className={className} role="img" aria-label={`${env.companyName} logo`}>
+      <rect width="32" height="32" rx="9" fill="#fff" />
+      <rect x="0.5" y="0.5" width="31" height="31" rx="8.5" fill="none" stroke="#2c1b64" strokeOpacity=".08" />
+      <rect x="8" y="8" width="7" height="7" rx="2.6" fill="#5b4bdb" />
+      <rect x="17" y="8" width="7" height="7" rx="2.6" fill="#8f7cf2" />
+      <rect x="8" y="17" width="7" height="7" rx="2.6" fill="#f0507a" />
+      <rect x="17" y="17" width="7" height="7" rx="2.6" fill="#f2646b" />
     </svg>
   );
 }
 
-/** The mark and the company name, as shown in page headers. */
-export function Brand({ className }: { className?: string }) {
+/** Mark + company name, linking home. */
+export function Brand({ size = "md" }: { size?: "md" | "lg" }) {
   return (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
-      <BrandMark />
-      <span className="text-body font-semibold tracking-tight text-ink">{COMPANY_NAME}</span>
-    </span>
+    <Link href="/" className="inline-flex items-center gap-2.5 rounded-control outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <LogoMark className={size === "lg" ? "size-11" : "size-8"} />
+      <span className={`font-bold tracking-[-0.02em] text-ink ${size === "lg" ? "text-title-2" : "text-body"}`}>
+        {env.companyName}
+      </span>
+    </Link>
   );
 }

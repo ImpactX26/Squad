@@ -1,52 +1,41 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { ToggleGroup } from "radix-ui";
+import { useSyncExternalStore } from "react";
 
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
-const OPTIONS = [
-  { value: "light", label: "Light", Icon: Sun },
-  { value: "dark", label: "Dark", Icon: Moon },
-  { value: "system", label: "System", Icon: Monitor },
-] as const;
+const ORDER = ["system", "light", "dark"] as const;
+type Theme = (typeof ORDER)[number];
 
-const noopSubscribe = () => () => {};
+const META: Record<Theme, { icon: typeof Sun; label: string }> = {
+  system: { icon: Monitor, label: "System" },
+  light: { icon: Sun, label: "Light" },
+  dark: { icon: Moon, label: "Dark" },
+};
 
-/** Light / dark / system, as a segmented control. */
-export function ThemeToggle({ className }: { className?: string }) {
+const noop = () => () => {};
+
+/** Cycles system → light → dark. Renders the system icon until mounted, since the server can't know the theme. */
+export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  // The chosen theme is only known in the browser: show no selection until hydrated.
-  const hydrated = useSyncExternalStore(
-    noopSubscribe,
-    () => true,
-    () => false,
-  );
+  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const current: Theme = mounted && ORDER.includes(theme as Theme) ? (theme as Theme) : "system";
+  const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length];
+  const Icon = META[current].icon;
 
   return (
-    <ToggleGroup.Root
-      type="single"
-      aria-label="Appearance"
-      value={hydrated ? (theme ?? "system") : ""}
-      onValueChange={(next) => {
-        // Clicking the selected option would clear it; keep one selected.
-        if (next) setTheme(next);
-      }}
-      className={cn("inline-flex items-center gap-0.5 rounded-full bg-surface p-0.5", className)}
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => setTheme(next)}
+      disabled={!mounted}
+      aria-label={`Theme: ${META[current].label}. Switch to ${META[next].label.toLowerCase()}.`}
+      title={`Theme: ${META[current].label}`}
+      className="text-ink-secondary hover:text-ink"
     >
-      {OPTIONS.map(({ value, label, Icon }) => (
-        <ToggleGroup.Item
-          key={value}
-          value={value}
-          aria-label={label}
-          title={label}
-          className="inline-flex size-9 items-center justify-center rounded-full text-ink-secondary transition-colors hover:text-ink data-[state=on]:bg-hairline data-[state=on]:text-ink"
-        >
-          <Icon aria-hidden="true" className="size-4" />
-        </ToggleGroup.Item>
-      ))}
-    </ToggleGroup.Root>
+      <Icon />
+    </Button>
   );
 }

@@ -1,79 +1,82 @@
-"""Drop the app tables, apply db/schema.sql and verify every table exists (make db-reset).
+"""Apply db/schema.sql to DATABASE_URL (backend/.env), then verify every table exists.
 
-Destroys all app data in the database DATABASE_URL points at (backend/.env).
-Laptops point at the Supabase dev project; never run this against prod by accident.
+From the repo root:
+    uv run --project backend python db/apply_schema.py
+
+Drops every table named in schema.sql first, so it destroys all app data.
 """
 
 import asyncio
-import os
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
-import asyncpg
-from dotenv import dotenv_values
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-ROOT = Path(__file__).resolve().parent.parent
-SCHEMA = ROOT / "db" / "schema.sql"
-ENV_FILE = ROOT / "backend" / ".env"
+import asyncpg  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
 
+from app.core.config import get_settings  # noqa: E402
+from app.core.db import asyncpg_connect_args  # noqa: E402
 
-def database_url() -> str:
-    # Same precedence as app/core/config.py: the environment wins over backend/.env.
-    url = os.environ.get("DATABASE_URL") or dotenv_values(ENV_FILE).get("DATABASE_URL")
-    if not url:
-        sys.exit(f"DATABASE_URL is not set (environment or {ENV_FILE})")
-    # asyncpg wants a plain postgresql:// URL, not SQLAlchemy's dialect form.
-    return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+SCHEMA_SQL = REPO_ROOT / "db" / "schema.sql"
+REQUIRED_EXTENSIONS = ("vector", "pgcrypto")
 
 
-def schema_objects(sql: str) -> tuple[list[str], list[str]]:
-    tables = re.findall(r"^CREATE TABLE (\w+)", sql, flags=re.MULTILINE)
-    sequences = re.findall(r"^CREATE SEQUENCE (\w+)", sql, flags=re.MULTILINE)
-    return tables, sequences
+def schema_tables() -> list[str]:
+    return re.findall(r"^CREATE TABLE (\w+)", SCHEMA_SQL.read_text(encoding="utf-8"), re.M)
 
 
-async def main() -> None:
-    url = database_url()
-    parts = urlsplit(url)
-    print(f"Database: {parts.hostname}:{parts.port or 5432}{parts.path}")
-
-    sql = SCHEMA.read_text(encoding="utf-8")
-    tables, sequences = schema_objects(sql)
-
-    # The Transaction pooler (port 6543) does not support prepared statements (§8).
-    kwargs = {"statement_cache_size": 0} if parts.port == 6543 else {}
-    conn = await asyncpg.connect(url, **kwargs)
+async def main() -> int:
+    url = get_settings().database_url
+    target = make_url(url)
+    print(f"Target: {target.host}:{target.port}/{target.database}")
     try:
-        print(await conn.fetchval("SELECT version()"))
-        async with conn.transaction():
-            for table in reversed(tables):
-                await conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
-            for sequence in sequences:
-                await conn.execute(f'DROP SEQUENCE IF EXISTS "{sequence}" CASCADE')
-            await conn.execute(sql)
+        conn = await asyncpg.connect(
+            target.set(drivername="postgresql").render_as_string(hide_password=False),
+            timeout=20,
+            **asyncpg_connect_args(url),
+        )
+    except (OSError, asyncpg.PostgresError, asyncio.TimeoutError) as e:
+        print(f"Can't connect: {type(e).__name__}: {e}")
+        print("Check DATABASE_URL in backend/.env.")
+        return 1
 
-        rows = await conn.fetch(
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'"
-        )
-        present = {r["table_name"] for r in rows}
-        missing = [t for t in tables if t not in present]
-        extensions = await conn.fetch(
-            "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector', 'pgcrypto') ORDER BY extname"
-        )
+    try:
+        print((await conn.fetchval("SELECT version()")).split(",")[0])
+        tables = schema_tables()
+        async with conn.transaction():
+            await conn.execute(f"DROP TABLE IF EXISTS {', '.join(tables)} CASCADE; DROP SEQUENCE IF EXISTS ticket_seq;")
+            await conn.execute(SCHEMA_SQL.read_text(encoding="utf-8"))
+        print(f"Applied db/schema.sql ({len(tables)} tables)")
+
+        present = {
+            r["table_name"]
+            for r in await conn.fetch(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'"
+            )
+        }
+        extensions = {
+            r["extname"]: r["extversion"]
+            for r in await conn.fetch("SELECT extname, extversion FROM pg_extension WHERE extname = ANY($1)", list(REQUIRED_EXTENSIONS))
+        }
+        has_seq = await conn.fetchval("SELECT to_regclass('ticket_seq') IS NOT NULL")
     finally:
         await conn.close()
 
-    print("Extensions: " + ", ".join(f"{e['extname']} {e['extversion']}" for e in extensions))
-    print(f"Tables ({len(tables) - len(missing)}/{len(tables)}):")
-    for table in tables:
-        print(f"  {'ok     ' if table in present else 'MISSING'} {table}")
-    if missing:
-        sys.exit(f"Missing tables: {', '.join(missing)}")
-    print("Schema applied and verified.")
+    missing_tables = [t for t in tables if t not in present]
+    missing_ext = [e for e in REQUIRED_EXTENSIONS if e not in extensions]
+    for t in tables:
+        print(f"  {'ok     ' if t in present else 'MISSING'} {t}")
+    print("Extensions:", ", ".join(f"{k} {v}" for k, v in extensions.items()), "| ticket_seq:", "ok" if has_seq else "MISSING")
+    if missing_tables or missing_ext or not has_seq:
+        print(f"FAILED: missing tables {missing_tables}, extensions {missing_ext}")
+        return 1
+    print(f"Verified: all {len(tables)} tables, extensions, and ticket_seq exist.")
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

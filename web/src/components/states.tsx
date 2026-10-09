@@ -1,124 +1,96 @@
-/**
- * The one pattern for loading, empty and error states on every staff page (§11.1).
- * Quiet: an icon, a sentence-case title, one line of help, and at most one action.
- */
+// The one loading, error and empty pattern every staff page uses (section 14.2, Phase 4).
+//
+//   loading -> LoadingState: quiet surface blocks in the shape of what is coming, aria-busy
+//   failed  -> ErrorState:   what went wrong, in the server's words, and "Try again"
+//   nothing -> EmptyState:   what would be here, and how it gets here
+//
+// A page that already shows data and fails to refresh keeps the data and shows InlineError above it.
 
-import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Inbox, LoaderCircle, RotateCw } from "lucide-react";
+import { AlertTriangle, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-function StateFrame({
-  icon: Icon,
-  tone = "neutral",
-  title,
-  children,
-  action,
-  className,
-  role,
+export function LoadingState({
+  label,
+  rows = 3,
+  rowClassName = "h-16",
 }: {
-  icon: LucideIcon;
-  tone?: "neutral" | "danger";
-  title: string;
-  children?: ReactNode;
-  action?: ReactNode;
-  className?: string;
-  role?: "status" | "alert";
+  /** Read by screen readers, e.g. "Loading jobs". */
+  label: string;
+  rows?: number;
+  rowClassName?: string;
 }) {
   return (
-    <div role={role} className={cn("flex flex-col items-center justify-center px-6 py-12 text-center", className)}>
-      <span
-        className={cn(
-          "inline-flex size-12 items-center justify-center rounded-full",
-          tone === "danger" ? "bg-danger/10 text-danger" : "bg-hairline/50 text-ink-secondary",
-        )}
-      >
-        <Icon aria-hidden="true" className="size-6" />
-      </span>
-      <p className="mt-4 font-semibold text-ink">{title}</p>
-      {children && <div className="mt-1 max-w-sm text-subheadline text-pretty text-ink-secondary">{children}</div>}
-      {action && <div className="mt-5">{action}</div>}
-    </div>
-  );
-}
-
-export function LoadingState({ label = "Loading", className }: { label?: string; className?: string }) {
-  return (
-    <div role="status" className={cn("flex items-center justify-center gap-2 px-6 py-12 text-ink-secondary", className)}>
-      <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
-      <span className="text-subheadline">{label}</span>
-    </div>
-  );
-}
-
-/** Placeholder rows while a list loads: the list's shape, no spinner jumping around. */
-export function LoadingRows({ rows = 5, className }: { rows?: number; className?: string }) {
-  return (
-    <div role="status" aria-label="Loading" className={cn("divide-y divide-hairline", className)}>
+    <div className="space-y-3" aria-busy="true" aria-label={label}>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="flex gap-3 px-4 py-4">
-          <span className="size-9 shrink-0 animate-pulse rounded-control bg-hairline/60" />
-          <span className="flex-1 space-y-2">
-            <span className="block h-3.5 w-3/5 animate-pulse rounded-full bg-hairline/60" />
-            <span className="block h-3 w-2/5 animate-pulse rounded-full bg-hairline/40" />
-            <span className="block h-3 w-1/3 animate-pulse rounded-full bg-hairline/40" />
-          </span>
-        </div>
+        <div key={i} className={`rounded-card bg-surface ${rowClassName}`} />
       ))}
     </div>
   );
 }
 
-export function EmptyState({
-  icon = Inbox,
-  title,
-  children,
+export function ErrorState({
+  message,
+  onRetry,
   action,
-  className,
 }: {
-  icon?: LucideIcon;
-  title: string;
-  children?: ReactNode;
+  message: string;
+  onRetry?: () => void;
+  /** Replaces "Try again" when retrying can't help, e.g. a link back. */
   action?: ReactNode;
-  className?: string;
 }) {
   return (
-    <StateFrame icon={icon} title={title} action={action} className={className}>
-      {children}
-    </StateFrame>
+    <div role="alert" className="grid place-items-center gap-3 rounded-panel bg-surface px-4 py-12 text-center">
+      <AlertTriangle className="size-6 text-danger" aria-hidden />
+      <p className="max-w-md text-subheadline text-ink-secondary">{message}</p>
+      {action ??
+        (onRetry ? (
+          <Button variant="outline" onClick={onRetry} className="rounded-control">
+            Try again
+          </Button>
+        ) : null)}
+    </div>
   );
 }
 
-export function ErrorState({
-  title = "Something went wrong",
-  message,
-  onRetry,
-  className,
+export function EmptyState({
+  icon: Icon,
+  title,
+  hint,
+  action,
 }: {
-  title?: string;
-  message?: string;
-  onRetry?: () => void;
-  className?: string;
+  icon: LucideIcon;
+  title: string;
+  hint?: ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <StateFrame
-      icon={AlertTriangle}
-      tone="danger"
-      title={title}
-      role="alert"
-      className={className}
-      action={
-        onRetry && (
-          <Button variant="secondary" size="sm" onClick={onRetry}>
-            <RotateCw aria-hidden="true" />
-            Try again
-          </Button>
-        )
-      }
-    >
-      {message}
-    </StateFrame>
+    <div className="grid place-items-center gap-2 rounded-panel bg-surface px-4 py-12 text-center">
+      <Icon className="size-6 text-ink-secondary" aria-hidden />
+      <p className="text-subheadline text-ink">{title}</p>
+      {hint ? <p className="max-w-md text-footnote text-ink-secondary">{hint}</p> : null}
+      {action ? <div className="pt-2">{action}</div> : null}
+    </div>
   );
+}
+
+/** A failed refresh while the last good data stays on screen. */
+export function InlineError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div role="alert" className="flex items-center gap-3 rounded-card bg-surface px-4 py-3 text-subheadline">
+      <AlertTriangle className="size-4 shrink-0 text-danger" aria-hidden />
+      <span className="min-w-0 flex-1 text-ink-secondary">{message}</span>
+      {onRetry ? (
+        <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0">
+          Try again
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The message to show for anything a fetch threw. */
+export function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
 }

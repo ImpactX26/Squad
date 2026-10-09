@@ -1,0 +1,116 @@
+{
+  "count": 60,
+  "lookback_days": 60,
+  "_status_note": "No awaiting_payment / scheduled here: those imply payments and service_jobs rows, which the live demo flow creates.",
+  "status_weights": {"resolved": 27, "closed": 11, "new": 8, "in_progress": 8, "awaiting_customer": 6},
+  "priority_weights": {"low": 12, "medium": 30, "high": 14, "urgent": 4},
+  "channel_weights": {"discord": 14, "telegram": 16, "email": 18, "web": 12},
+  "followup_chance": 0.2,
+
+  "templates": [
+    {"issue_type": "battery", "category": "hardware", "product_category": "laptop",
+     "titles": ["Battery not charging", "Battery stuck at 0%", "Battery drains in under an hour"],
+     "descriptions": [
+       "My laptop battery stopped charging. It stays at 0% even when plugged in overnight.",
+       "Battery shows plugged in, not charging. Tried another socket, same thing.",
+       "Battery goes from 100 to 0 in about 50 minutes now. It used to last all day."],
+     "summary": "Battery doesn't hold or take charge; outlet swap didn't help. Battery health check pending."},
+    {"issue_type": "charging", "category": "hardware", "product_category": "laptop",
+     "titles": ["Charger not detected", "Laptop doesn't recognise the charger"],
+     "descriptions": [
+       "When I plug in the charger nothing happens. No light, no charging icon.",
+       "Charger works on my friend's laptop but mine says no adapter connected."],
+     "summary": "Charger not detected by the laptop; charger works on another device, so suspect the port or board."},
+    {"issue_type": "display", "category": "hardware", "product_category": "laptop",
+     "titles": ["Screen is black but laptop is on", "Display flickering", "Lines on the screen"],
+     "descriptions": [
+       "Laptop turns on, I can hear the fan and see the keyboard light, but the screen stays black.",
+       "The screen flickers constantly, worse when I move the lid.",
+       "There are vertical green lines across the display since yesterday."],
+     "summary": "Internal display fault while the system runs; external monitor test pending."},
+    {"issue_type": "overheating", "category": "hardware", "product_category": "laptop",
+     "titles": ["Laptop overheating", "Fans very loud and laptop hot"],
+     "descriptions": [
+       "The laptop gets very hot near the keyboard and shuts down during video calls.",
+       "Fans are at full speed all the time even when I'm only browsing."],
+     "summary": "Overheating under light load; vents and power mode checked. Likely needs fan cleaning and repaste."},
+    {"issue_type": "boot", "category": "hardware", "product_category": "laptop",
+     "titles": ["Laptop stuck on logo", "Won't boot after update"],
+     "descriptions": [
+       "It powers on, shows the logo, and then just keeps spinning forever.",
+       "After last night's update it won't start. It goes to automatic repair and fails."],
+     "summary": "Boot loop at the logo; automatic repair fails. SSD detection in BIOS to be confirmed."},
+    {"issue_type": "os", "category": "software", "product_category": "laptop",
+     "titles": ["Blue screen crashes", "Random BSOD"],
+     "descriptions": [
+       "I keep getting a blue screen with DRIVER_IRQL_NOT_LESS_OR_EQUAL a few times a day.",
+       "Laptop randomly crashes to a blue screen, usually when I'm on Teams."],
+     "summary": "Recurring BSOD; stop code recorded. Driver rollback and memory test pending."},
+    {"issue_type": "performance", "category": "software", "product_category": "laptop",
+     "titles": ["Laptop very slow", "Takes 5 minutes to boot"],
+     "descriptions": [
+       "Everything is slow. Opening Chrome takes almost a minute.",
+       "Boot takes around five minutes and the disk shows 100% usage."],
+     "summary": "General slowness with high disk usage; startup apps and free space checked."},
+    {"issue_type": "connectivity", "category": "software", "product_category": "laptop",
+     "titles": ["Wi-Fi keeps disconnecting", "Wi-Fi drops every few minutes"],
+     "descriptions": [
+       "Wi-Fi disconnects every 10 minutes. My phone on the same network is fine.",
+       "Internet keeps dropping on the laptop only, especially on battery."],
+     "summary": "Intermittent Wi-Fi drops on the laptop only; adapter power saving and driver to be checked."},
+    {"issue_type": "audio", "category": "hardware", "product_category": "laptop",
+     "titles": ["Speakers crackling", "Distorted sound from speakers"],
+     "descriptions": [
+       "The speakers crackle at any volume. Headphones sound fine.",
+       "Sound is distorted and buzzy from the built-in speakers."],
+     "summary": "Speaker distortion; headphones are clean, so it points to speaker hardware."},
+    {"issue_type": "keyboard", "category": "hardware", "product_category": "laptop",
+     "titles": ["Some keys not working", "Keyboard keys unresponsive"],
+     "descriptions": [
+       "The E, R and T keys stopped working. Others are fine.",
+       "Half the bottom row doesn't respond. No liquid spill."],
+     "summary": "Several keys unresponsive; BIOS key test and cleaning pending."},
+    {"issue_type": "driver", "category": "software", "product_category": "laptop",
+     "titles": ["Touchpad stopped working after update", "Webcam not detected after update"],
+     "descriptions": [
+       "After the latest Windows update my touchpad does nothing.",
+       "Camera app says no camera found since the update yesterday."],
+     "summary": "Device stopped working after an update; driver rollback suggested."},
+    {"issue_type": "boot", "category": "hardware", "product_category": "desktop",
+     "titles": ["Desktop won't turn on", "PC dead, no lights"],
+     "descriptions": [
+       "My desktop doesn't turn on at all. No fans, no lights.",
+       "Pressed the power button and nothing happens. It was fine yesterday."],
+     "summary": "No power on the desktop; PSU test pending."},
+    {"issue_type": "other", "category": "hardware", "product_category": "desktop",
+     "titles": ["Clock keeps resetting", "BIOS settings reset every restart"],
+     "descriptions": [
+       "Every time I unplug the PC the date goes back to 2020.",
+       "BIOS keeps losing my boot order whenever power goes out."],
+     "summary": "Clock and BIOS settings reset after power loss; likely CMOS battery."},
+    {"issue_type": "audio", "category": "hardware", "product_category": "headphones",
+     "titles": ["Left earcup no sound", "One side of headphones silent"],
+     "descriptions": [
+       "The left side of my headphones has stopped playing anything.",
+       "Right earbud/earcup is completely silent, left works."],
+     "summary": "One side silent; balance and source checked. Reset and firmware update pending."},
+    {"issue_type": "connectivity", "category": "hardware", "product_category": "headphones",
+     "titles": ["Bluetooth keeps disconnecting", "Can't pair headphones"],
+     "descriptions": [
+       "Headphones disconnect from my phone every few minutes.",
+       "They don't show up in Bluetooth anymore. Tried restarting the phone."],
+     "summary": "Bluetooth pairing unstable; re-pair and factory reset suggested."},
+    {"issue_type": "battery", "category": "hardware", "product_category": "headphones",
+     "titles": ["Headphones not charging", "Battery dies quickly"],
+     "descriptions": [
+       "The charging light doesn't come on and they're dead.",
+       "Battery used to last a day, now only about two hours."],
+     "summary": "Headphones don't charge or hold charge; cable swap pending."}
+  ],
+
+  "agent_replies": {
+    "resolved": "Glad that's working again. I'm closing this ticket; reply here if anything comes back.",
+    "in_progress": "Thanks for the details. I'm looking into this now and will update you shortly.",
+    "awaiting_customer": "Could you try the steps above and let me know what you see?"
+  }
+}

@@ -1,81 +1,170 @@
 /*
- * Design tokens from ARCHITECTURE.md §11.3. This is the only file with raw
- * color values. Components use the utilities these generate
- * (bg-surface, text-ink-secondary, text-title-1, rounded-card, shadow-raised)
- * or var(--color-*) in CSS. Tailwind's default palette, type scale, radii and
- * shadows are switched off, so anything else simply doesn't exist.
+ * Design tokens — ARCHITECTURE.md §11.3: soft lavender glass, deep indigo, one coral ticket stub.
+ * Light values on :root, dark values on .dark (set by next-themes).
+ * Exposed to Tailwind as bg-canvas, bg-surface, text-ink, text-on-accent, border-hairline, …
+ *
+ * Text-bearing colours (ink, ink-secondary, accent, success, warning, danger) all pass 4.5:1 on
+ * `surface`. `on-accent` is the text that sits on an accent fill: white on indigo, ink on light violet.
  */
 
-@theme static {
-  /* Colors, light. Dark values are below under .dark. */
-  --color-*: initial;
-  --color-canvas: #F5F5F7;
-  --color-surface: #FFFFFF;
-  --color-surface-raised: #FFFFFF;
-  --color-ink: #1D1D1F;
-  --color-ink-secondary: #6E6E73;
-  --color-hairline: #D2D2D7;
-  --color-accent: #0071E3;
-  /* Text and icons on an accent fill (not in the §11.3 table: white in both themes). */
-  --color-on-accent: #FFFFFF;
-  --color-success: #34C759;
-  --color-warning: #FF9500;
-  --color-danger: #FF3B30;
-  /* Channel badges (icon + tint), from the same system-color family; never status. */
-  --color-channel-telegram: #32ADE6;
-  --color-channel-discord: #5856D6;
-  --color-channel-email: #AF52DE;
-  --color-channel-web: #30B0C7;
-
-  /* Shadows: only floating layers (popovers, sheets, menus) use one. */
-  --shadow-*: initial;
-  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.06), 0 10px 30px rgb(0 0 0 / 0.12);
-
-  /* Type: one family, the system UI stack. */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", Roboto, sans-serif;
-
-  /* Type scale 34 / 28 / 22 / 17 (body) / 15 / 13, tight letter-spacing on 28+. */
-  --text-*: initial;
-  --text-large-title: 2.125rem;
-  --text-large-title--line-height: 1.2;
-  --text-large-title--letter-spacing: -0.015em;
-  --text-title-1: 1.75rem;
-  --text-title-1--line-height: 1.21;
-  --text-title-1--letter-spacing: -0.012em;
-  --text-title-2: 1.375rem;
-  --text-title-2--line-height: 1.27;
-  --text-body: 1.0625rem;
-  --text-body--line-height: 1.47;
-  --text-subheadline: 0.9375rem;
-  --text-subheadline--line-height: 1.4;
-  --text-footnote: 0.8125rem;
-  --text-footnote--line-height: 1.38;
-
-  /* Radii: 20 page panels, 14 list groups and cards, 10 inputs and buttons.
-     Status pills use rounded-full. */
-  --radius-*: initial;
-  --radius-panel: 20px;
-  --radius-card: 14px;
-  --radius-control: 10px;
+:root {
+  /* The lavender field behind everything (globals.css paints it); `canvas` is its flat stand-in. */
+  --field: linear-gradient(135deg, #ece8fa 0%, #e3e7fb 46%, #f4e9f2 100%);
+  --canvas: #f1eff9;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --frost: rgb(255 255 255 / 0.55);
+  --stub-notch: #f3e7f0; /* the welcome panel behind its sample stub */
+  --surface-raised-shadow: 0 24px 60px -24px rgb(44 27 100 / 0.28), 0 2px 8px rgb(44 27 100 / 0.06);
+  --card-shadow: 0 1px 2px rgb(44 27 100 / 0.05), 0 0 0 1px rgb(44 27 100 / 0.07);
+  --ink: #1e1a33;
+  --ink-secondary: #6f6b86;
+  --hairline: #e5e2ef;
+  --accent: #2c1b64;
+  --on-accent: #ffffff;
+  --violet: #7461e8;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #e11d48;
 }
 
-@layer base {
-  .dark {
-    --color-canvas: #000000;
-    --color-surface: #1C1C1E;
-    --color-surface-raised: #2C2C2E;
-    --color-ink: #F5F5F7;
-    --color-ink-secondary: #98989D;
-    --color-hairline: #38383A;
-    --color-accent: #2997FF;
-    --color-on-accent: #FFFFFF;
-    --color-success: #30D158;
-    --color-warning: #FF9F0A;
-    --color-danger: #FF453A;
-    --color-channel-telegram: #64D2FF;
-    --color-channel-discord: #5E5CE6;
-    --color-channel-email: #BF5AF2;
-    --color-channel-web: #40C8E0;
-    --shadow-raised: 0 10px 30px rgb(0 0 0 / 0.6);
+.dark {
+  --field: linear-gradient(135deg, #15102b 0%, #0f1230 50%, #1c1027 100%);
+  --canvas: #120f24;
+  --surface: #1b1733;
+  --surface-raised: #241f42;
+  --frost: rgb(36 31 66 / 0.55);
+  --stub-notch: #201733;
+  --surface-raised-shadow: 0 24px 60px -24px rgb(0 0 0 / 0.75);
+  --card-shadow: 0 0 0 1px rgb(169 155 255 / 0.12);
+  --ink: #f2f0fa;
+  --ink-secondary: #a9a4c4;
+  --hairline: #2e2850;
+  --accent: #b3a6ff;
+  --on-accent: #17122e;
+  --violet: #9c8cff;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+}
+
+/*
+ * Priority, as the ticket stub's gradient (§11.3 ticket card): the one bold element. Same in both
+ * themes; words on it are white and bold, as on the sign-in page's stub.
+ */
+:root {
+  --prio-urgent-1: #e8435a;
+  --prio-urgent-2: #f58a86;
+  --prio-high-1: #ee6a45;
+  --prio-high-2: #f6aa78;
+  --prio-medium-1: #5b4bdb;
+  --prio-medium-2: #9b8af2;
+  --prio-low-1: #1f9cb8;
+  --prio-low-2: #6cd0be;
+}
+
+/*
+ * The ticket pass (§11.3: inbox cards, technician jobs, ticket and job headers): the whole card in one
+ * colour. The top carries white words (dark on yellow); the lighter lower half carries ink. Separate from
+ * the welcome screen's sample stub (--prio-*), which keeps its own colours.
+ */
+:root {
+  --pass-red-1: #e23e4f;
+  --pass-red-2: #f48b95;
+  --pass-orange-1: #ef6418;
+  --pass-orange-2: #fbab68;
+  --pass-yellow-1: #f3bb22;
+  --pass-yellow-2: #fbe184;
+  --pass-green-1: #1f9e58;
+  --pass-green-2: #73d69a;
+  --pass-violet-1: #5b4bdb;
+  --pass-violet-2: #9b8af2;
+  --pass-slate-1: #5f6b80;
+  --pass-slate-2: #a8b2c3;
+}
+
+@theme inline {
+  /* Color */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-frost: var(--frost);
+  --color-ink: var(--ink);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-hairline: var(--hairline);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-violet: var(--violet);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --shadow-raised: var(--surface-raised-shadow);
+  --shadow-card: var(--card-shadow);
+
+  /* Type — Plus Jakarta Sans for everything (app/layout.tsx), titles bold and tight */
+  --font-sans: var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Roboto, sans-serif;
+  --font-heading: var(--font-sans);
+
+  /* Scale 34 / 28 / 22 / 17 (body) / 15 / 13; tight letter-spacing on 22+ */
+  --text-large-title: 34px;
+  --text-large-title--line-height: 1.12;
+  --text-large-title--letter-spacing: -0.035em;
+  --text-title-1: 28px;
+  --text-title-1--line-height: 1.18;
+  --text-title-1--letter-spacing: -0.03em;
+  --text-title-2: 22px;
+  --text-title-2--line-height: 1.27;
+  --text-title-2--letter-spacing: -0.02em;
+  --text-body: 17px;
+  --text-body--line-height: 1.5;
+  --text-subheadline: 15px;
+  --text-subheadline--line-height: 1.45;
+  --text-footnote: 13px;
+  --text-footnote--line-height: 1.4;
+
+  /* Shape — 32px page panels, 22px cards, 14px fields and buttons, full pills */
+  --radius-panel: 32px;
+  --radius-card: 22px;
+  --radius-control: 14px;
+
+  /* Motion */
+  --animate-card-in: card-in 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-arrive: arrive 1.6s ease-out 2;
+}
+
+/* The inbox's one entrance: stubs rise into place, staggered by --i (ticket-card.tsx). */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+
+/* The welcome screen's sample ticket settles into place once, on load (components/welcome). */
+@keyframes stub-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) rotate(-4deg) scale(0.96);
+  }
+}
+
+/* A ticket that just arrived or changed over /ws/staff pulses its ring twice. */
+@keyframes arrive {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--violet) 55%, transparent), var(--card-shadow);
+  }
+  70% {
+    box-shadow: 0 0 0 10px transparent, var(--card-shadow);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
