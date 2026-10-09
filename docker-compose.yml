@@ -1,0 +1,16 @@
+# Optional local Postgres + pgvector (ARCHITECTURE.md §8 fallback). Not needed when using Supabase.
+# Matches the default DATABASE_URL in backend/.env.example. Stop any other Postgres on :5432 first.
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: servicemesh
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
