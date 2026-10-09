@@ -100,7 +100,7 @@ class TelegramAdapter:
         )
         await self.typing(chat_id)
         try:
-            await handle_inbound(inbound)
+            result = await handle_inbound(inbound)
         except Exception:
             log.exception("telegram intake failed for chat %s", chat_id)
             return
